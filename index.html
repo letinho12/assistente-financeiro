@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Assistente Financeiro</title>
+<meta name="theme-color" content="#1F3A5F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Finanças">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topo">
+  <div>
+    <h1 id="titulo-mes">Assistente Financeiro</h1>
+    <p class="sub" id="sync">Carregando…</p>
+  </div>
+  <button id="atualizar" class="icone" aria-label="Atualizar dados" title="Atualizar">
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+  </button>
+</header>
+
+<main id="app">
+  <section id="configurar" class="cartao" hidden>
+    <h2>Conectar à sua planilha</h2>
+    <p>Abra o link de configuração que o script gerou (função <code>gerarLinkDoApp</code>), ou cole os dados abaixo.</p>
+    <label>URL do script (termina em /exec)<input id="cfg-api" type="url" autocomplete="off"></label>
+    <label>Código de acesso<input id="cfg-token" type="password" autocomplete="off"></label>
+    <button id="cfg-salvar" class="primario">Salvar e carregar</button>
+    <p class="erro" id="cfg-erro" hidden></p>
+  </section>
+
+  <div id="conteudo" hidden>
+    <section class="cartao heroi" aria-live="polite">
+      <p class="rotulo">Ainda posso gastar este mês</p>
+      <p class="numero-heroi" id="h-restante">—</p>
+      <p class="status" id="h-status"></p>
+      <div class="medidor" role="img" id="h-medidor-rotulo"><div class="medidor-barra" id="h-medidor"></div></div>
+      <p class="sub" id="h-detalhe"></p>
+    </section>
+
+    <section class="grade-tiles" id="tiles"></section>
+
+    <section class="cartao" id="analise" hidden>
+      <h2>Análise do assistente</h2>
+      <p class="veredito" id="a-veredito"></p>
+      <p id="a-resumo"></p>
+      <ul id="a-dicas"></ul>
+      <p class="sub" id="a-data"></p>
+    </section>
+
+    <div class="colunas">
+      <section class="cartao">
+        <h2>De onde vem o seu limite</h2>
+        <dl class="cascata" id="cascata"></dl>
+      </section>
+
+      <section class="cartao">
+        <h2>Gasto variável por categoria</h2>
+        <div class="barras-h" id="g-categorias"></div>
+        <p class="vazio" id="g-categorias-vazio" hidden>Nenhum gasto variável neste mês ainda.</p>
+      </section>
+    </div>
+
+    <section class="cartao">
+      <h2>Faturas do Nubank já comprometidas</h2>
+      <div class="legenda" aria-hidden="true">
+        <span><i class="chip s1"></i>Parcelas</span><span><i class="chip s2"></i>Mensalidades</span>
+      </div>
+      <div class="colunas-grafico" id="g-faturas" role="img"></div>
+      <details><summary>Ver como tabela</summary><table id="t-faturas"></table></details>
+    </section>
+
+    <div class="colunas">
+      <section class="cartao">
+        <h2>Patrimônio por tipo</h2>
+        <p class="numero-medio" id="p-total"></p>
+        <div class="barras-h" id="g-patrimonio"></div>
+        <details><summary>Ver aplicações</summary><table id="t-invest"></table></details>
+      </section>
+
+      <section class="cartao">
+        <h2>Contas</h2>
+        <ul class="lista" id="l-contas"></ul>
+      </section>
+    </div>
+
+    <div class="colunas">
+      <section class="cartao">
+        <h2>Parcelamentos ativos</h2>
+        <ul class="lista" id="l-parcelados"></ul>
+      </section>
+      <section class="cartao">
+        <h2>Mensalidades e assinaturas</h2>
+        <ul class="lista" id="l-mensalidades"></ul>
+      </section>
+    </div>
+
+    <section class="cartao">
+      <h2>Últimas transações</h2>
+      <ul class="lista" id="l-transacoes"></ul>
+    </section>
+  </div>
+</main>
+
+<div class="dica" id="dica" role="tooltip" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
