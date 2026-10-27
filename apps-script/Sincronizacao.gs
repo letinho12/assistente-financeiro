@@ -797,7 +797,7 @@ function semAcento(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, ''
  */
 function gerarLinkDoApp() {
   var urlDoScript = '';   // cole aqui a URL que termina em /exec (Implantar > Gerenciar implantações)
-  var urlDoApp = '';      // cole aqui o endereço do app no GitHub Pages
+  var urlDoApp = 'https://letinho12.github.io/assistente-financeiro/';
   var props = PropertiesService.getScriptProperties();
   var token = props.getProperty('APP_TOKEN');
   if (!token) {
