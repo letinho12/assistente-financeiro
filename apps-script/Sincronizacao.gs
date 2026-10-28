@@ -93,7 +93,15 @@ function sincronizar() {
                                  nome, conta.type, mensalidades, titular);
         var pend = txs.filter(function (t) { return t.status === 'PENDING'; }).length;
         resumo.push(nome + ': ' + n + ' transações novas' + (pend ? ' (' + pend + ' pendentes)' : ''));
-        if (conta.type === 'CREDIT') cartoes.push({ conta: nome, txs: txs });
+        if (conta.type === 'CREDIT') {
+          cartoes.push({ conta: nome, txs: txs });
+          var fatura = faturaAberta(txs, diaDeFechamento(ss, conta), new Date());
+          if (fatura) {
+            gravarFatura(ss, nome, fatura.valor);
+            resumo.push(nome + ': fatura aberta R$ ' + fatura.valor.toFixed(2) + ' (compras ' + fatura.compras.toFixed(2) +
+                        ', pagamentos e estornos ' + fatura.creditos.toFixed(2) + ')');
+          }
+        }
       });
       try {
         var inst = bancoDoItem ? bancoDoItem + ' (investimentos)' : 'Outros (investimentos)';
@@ -547,16 +555,26 @@ function reconstruirParcelados(ss, cartoes) {
   var aba = ss.getSheetByName(ABA.parcelados);
   var ref = new Date(ss.getSheetByName(ABA.config).getRange('B4').getValue());
   var n = ultimaLinhaCom(aba, 1);
-  var manuais = [];
+  var manuais = [], presentes = {};
   if (n >= 2) {
     aba.getRange(2, 1, n - 1, 10).getValues().forEach(function (l) {
       if (l[0] !== '' && l[9] === '') manuais.push([l[0], l[1], l[2], l[3], l[4], '']);
+      if (l[9] !== '') presentes[l[9]] = true;
     });
     aba.getRange(2, 1, n - 1, 5).clearContent();
     aba.getRange(2, 10, n - 1, 1).clearContent();
   }
+  // Linha da Pluggy que você apagou (ex.: compra cancelada) não volta mais.
+  var props = PropertiesService.getScriptProperties();
+  var ignorados = JSON.parse(props.getProperty('PARCELADOS_IGNORADOS') || '{}');
+  var gravados = JSON.parse(props.getProperty('PARCELADOS_GRAVADOS') || '[]');
+  gravados.forEach(function (id) { if (!presentes[id]) ignorados[id] = true; });
   var linhas = manuais;
-  cartoes.forEach(function (c) { linhas = linhas.concat(planosParcelados(c.txs, c.conta, ref)); });
+  cartoes.forEach(function (c) {
+    linhas = linhas.concat(planosParcelados(c.txs, c.conta, ref).filter(function (l) { return !ignorados[l[5]]; }));
+  });
+  props.setProperty('PARCELADOS_IGNORADOS', JSON.stringify(ignorados));
+  props.setProperty('PARCELADOS_GRAVADOS', JSON.stringify(linhas.map(function (l) { return l[5]; }).filter(String)));
   if (!linhas.length) return;
   aba.getRange(2, 1, linhas.length, 5).setValues(linhas.map(function (l) { return l.slice(0, 5); }));
   aba.getRange(2, 10, linhas.length, 1).setValues(linhas.map(function (l) { return [l[5]]; }));
@@ -577,6 +595,52 @@ function formulasParcelado(aba, r) {
     '=IF(A' + r + '="","",G' + r + '*B' + r + ')',
     '=IF(A' + r + '="","",IF(AND(' + el + '>=0,' + el + '<C' + r + '),"Sim","Não"))'
   ]]);
+}
+
+/**
+ * Dia em que a fatura fecha: Config B5, ou o que a Pluggy informar (que fica salvo em B5).
+ */
+function diaDeFechamento(ss, conta) {
+  var cfg = ss.getSheetByName(ABA.config);
+  var dia = Number(cfg.getRange('B5').getValue());
+  if (dia >= 1 && dia <= 31) return dia;
+  var fecha = (conta.creditData || {}).balanceCloseDate;
+  if (!fecha) return 0;
+  dia = dataLocal(fecha).getDate();
+  cfg.getRange('B5').setValue(dia);
+  return dia;
+}
+
+/**
+ * Fatura aberta = compras e parcelas desde o último fechamento, menos pagamentos e estornos.
+ * O "saldo" do cartão na Pluggy é o limite usado (inclui as parcelas futuras), não a fatura.
+ */
+function faturaAberta(txs, dia, hoje) {
+  if (!dia) return null;
+  var fechou = new Date(hoje.getFullYear(), hoje.getMonth(), dia);
+  if (fechou > hoje) fechou = new Date(hoje.getFullYear(), hoje.getMonth() - 1, dia);
+  var compras = 0, creditos = 0, achou = false;
+  txs.forEach(function (t) {
+    var d = dataLocal(t.date);
+    if (d < fechou || d > hoje) return;
+    achou = true;
+    if (t.type === 'CREDIT') creditos += Math.abs(t.amount); else compras += Math.abs(t.amount);
+  });
+  if (!achou) return null;
+  var r = function (v) { return Math.round(v * 100) / 100; };
+  return { valor: r(compras - creditos), compras: r(compras), creditos: r(creditos) };
+}
+
+/** Coluna C do cartão passa a ser a fatura aberta; o limite usado fica na coluna G. */
+function gravarFatura(ss, nome, valor) {
+  var aba = ss.getSheetByName(ABA.contas);
+  garantirColuna(aba, 7, 'Limite usado');
+  var linhas = valores(aba, 3);
+  for (var i = 0; i < linhas.length; i++) {
+    if (linhas[i][0] !== nome) continue;
+    aba.getRange(i + 2, 7).setValue(linhas[i][2]).setNumberFormat('"R$" #,##0.00');
+    aba.getRange(i + 2, 3).setValue(valor);
+  }
 }
 
 function atualizarConta(ss, nome, conta) {
