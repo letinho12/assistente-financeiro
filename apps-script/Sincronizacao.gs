@@ -126,6 +126,7 @@ function sincronizar() {
     migrarPixParaTerceiros(ss, titular);
     resumo.push(investimentos.length + ' investimentos lidos');
     var novas = detectarRecorrentes(ss);
+    revisarMensalidades(ss);
     if (novas) resumo.push(novas + ' mensalidade(s) detectada(s) para revisar');
     var renda = atualizarRenda(ss);
     if (renda) resumo.push(renda);
@@ -323,9 +324,9 @@ function encontrarRecorrentes(linhas, jaCadastradas) {
   });
   var achadas = [];
   Object.keys(grupos).forEach(function (k) {
-    var g = grupos[k], meses = {};
-    g.forEach(function (l) { var d = new Date(l[0]); meses[d.getFullYear() * 12 + d.getMonth()] = true; });
-    if (Object.keys(meses).length < 2 || g.length > Object.keys(meses).length + 1) return;
+    var g = grupos[k];
+    if (!ehMensal(g.map(function (l) { return new Date(l[0]); }), new Date())) return;
+    if (TAXAS.test(semAcento(k)) || g[0][5] === 'Impostos e taxas') return;
     var valores = g.map(function (l) { return l[2]; });
     var min = Math.min.apply(null, valores), max = Math.max.apply(null, valores);
     if (min <= 0 || (max - min) / max > 0.15) return;
@@ -424,6 +425,61 @@ function ultimaLinhaCom(aba, col) {
   var v = aba.getRange(1, col, aba.getMaxRows(), 1).getValues();
   for (var i = v.length - 1; i >= 0; i--) if (v[i][0] !== '') return i + 1;
   return 1;
+}
+
+var TAXAS = /\b(iof|juros|tarifa|multa|anuidade|encargo)/;
+
+/**
+ * Cobrança mensal de verdade: uma por mês, em meses seguidos, com 25 a 35 dias entre elas,
+ * e a última há no máximo 40 dias. A Pluggy não diz o que é assinatura; isso vem da recorrência.
+ */
+function ehMensal(datas, hoje) {
+  if (datas.length < 2) return false;
+  datas = datas.slice().sort(function (a, b) { return a - b; });
+  for (var i = 1; i < datas.length; i++) {
+    var dias = (datas[i] - datas[i - 1]) / 864e5;
+    if (dias < 25 || dias > 35) return false;
+  }
+  return (hoje - datas[datas.length - 1]) / 864e5 <= 40;
+}
+
+/**
+ * Revê as mensalidades detectadas pelo script (as digitadas por você ficam como estão):
+ * desliga a que parou de cobrar ou não é mensal, e atualiza o valor pela última cobrança.
+ */
+function revisarMensalidades(ss) {
+  var abaM = ss.getSheetByName(ABA.mensalidades), abaT = ss.getSheetByName(ABA.transacoes);
+  var linhas = valores(abaT, 9), hoje = new Date(), porChave = {};
+  linhas.forEach(function (l) {
+    if (l[3] !== 'Saída' || !(l[0] instanceof Date)) return;
+    (porChave[chave(l[1])] = porChave[chave(l[1])] || []).push(l);
+  });
+  var desligadas = {}, ligadas = {};
+  valores(abaM, 7).forEach(function (m, i) {
+    if (!m[0] || !/^Detectada automaticamente/.test(m[6])) return;
+    if (m[5] === 'Não' && !/Desligada:/.test(m[6])) return; // você desligou à mão: fica desligada
+    var k = chave(m[0]), cobr = (porChave[k] || []).slice().sort(function (a, b) { return a[0] - b[0]; });
+    var motivo = '';
+    if (TAXAS.test(semAcento(k)) || m[4] === 'Impostos e taxas') motivo = 'é taxa, não assinatura';
+    else if (!cobr.length || (hoje - cobr[cobr.length - 1][0]) / 864e5 > 40) motivo = 'parou de cobrar há mais de 40 dias';
+    else if (!ehMensal(cobr.slice(-3).map(function (l) { return l[0]; }), hoje)) motivo = 'não cobra uma vez por mês';
+    var r = i + 2;
+    if (motivo) {
+      abaM.getRange(r, 6, 1, 2).setValues([['Não', 'Detectada automaticamente. Desligada: ' + motivo + '.']]);
+      desligadas[k] = true;
+    } else {
+      var ult = cobr[cobr.length - 1];
+      abaM.getRange(r, 2, 1, 2).setValues([[ult[2], ult[0].getDate()]]);
+      abaM.getRange(r, 6, 1, 2).setValues([['Sim', 'Detectada automaticamente. Revise e mude Ativa? para Não se estiver errada.']]);
+      ligadas[k] = true;
+    }
+  });
+  // A cobrança só sai do gasto variável se a mensalidade estiver ativa (senão contaria duas vezes ou nenhuma).
+  linhas.forEach(function (l, i) {
+    var k = chave(l[1]);
+    if (l[4] === 'Mensalidade' && desligadas[k]) abaT.getRange(i + 2, 5).setValue('Variável');
+    if (l[4] === 'Variável' && l[3] === 'Saída' && ligadas[k]) abaT.getRange(i + 2, 5).setValue('Mensalidade');
+  });
 }
 
 function lerMensalidades(ss) {
