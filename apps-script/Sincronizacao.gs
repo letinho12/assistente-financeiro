@@ -95,10 +95,12 @@ function sincronizar() {
         resumo.push(nome + ': ' + n + ' transações novas' + (pend ? ' (' + pend + ' pendentes)' : ''));
         if (conta.type === 'CREDIT') {
           cartoes.push({ conta: nome, txs: txs });
-          var fatura = faturaAberta(txs, diaDeFechamento(ss, conta), new Date());
+          var fatura = faturaAberta(txs, diaDeFechamento(ss, conta), new Date(), ultimaFatura(apiKey, conta.id),
+                                    parceladosIgnorados());
           if (fatura) {
             gravarFatura(ss, nome, fatura.valor);
-            resumo.push(nome + ': fatura aberta R$ ' + fatura.valor.toFixed(2) + ' (compras ' + fatura.compras.toFixed(2) +
+            resumo.push(nome + ': fatura aberta R$ ' + fatura.valor.toFixed(2) + ' (fatura anterior ' +
+                        (fatura.anterior == null ? '?' : fatura.anterior.toFixed(2)) + ', compras ' + fatura.compras.toFixed(2) +
                         ', pagamentos e estornos ' + fatura.creditos.toFixed(2) + ')');
           }
         }
@@ -120,6 +122,7 @@ function sincronizar() {
     limparContasAntigas(ss, vistas);
     reclassificarBTG(ss);
     removerDuplicadasBTG(ss);
+    pixPagoComCartao(ss);
     migrarPixParaTerceiros(ss, titular);
     resumo.push(investimentos.length + ' investimentos lidos');
     var novas = detectarRecorrentes(ss);
@@ -259,6 +262,12 @@ function ehPagamentoDeFatura(tx) {
     .test((tx.category || '') + ' ' + (tx.description || ''));
 }
 
+/** Lançamentos contábeis do Nubank que se anulam em pares (ex.: "Saldo em rotativo" e "Crédito de rotativo"). */
+function ehLancamentoDeRotativo(tx) {
+  return /saldo em rotativo|credito de rotativo|encerramento de divida|juros de divida encerrada/
+    .test(semAcento(tx.description || '').toLowerCase());
+}
+
 /** Converte uma transação da Pluggy na linha da aba Transações. */
 function linhaTransacao(tx, conta, tipoConta, chavesMensalidades, titular) {
   var entrada = tx.type === 'CREDIT';
@@ -266,7 +275,7 @@ function linhaTransacao(tx, conta, tipoConta, chavesMensalidades, titular) {
   var meta = tx.creditCardMetadata || {};
   var classe;
   if (/^BTG/.test(conta)) classe = 'Investimento'; // tudo que passa pela BTG é aplicação ou resgate
-  else if (ehPagamentoDeFatura(tx)) classe = 'Transferência';
+  else if (ehPagamentoDeFatura(tx) || ehLancamentoDeRotativo(tx)) classe = 'Transferência';
   else if (cat === 'Transferência') classe = (!entrada && pixParaTerceiro(tx.description, titular)) ? 'Variável' : 'Transferência';
   else if (cat === 'Investimento') classe = 'Investimento';
   else if (entrada) classe = 'Receita';
@@ -366,16 +375,19 @@ function prepararAbas(ss) {
   }
   for (var i = 0; i < rotulos.length; i++) {
     // Entradas e saídas sem as transferências entre as suas contas e sem aplicações/resgates.
-    var periodo = 'Transações!$A:$A,">="&Config!$B$4,Transações!$A:$A,"<="&EOMONTH(Config!$B$4,0)';
+    var periodo = "'Transações'!$A:$A,\">=\"&Config!$B$4,'Transações'!$A:$A,\"<=\"&EOMONTH(Config!$B$4,0)";
     if (rotulos[i][0] === 'Entradas registradas no mês') {
-      resumo.getRange(i + 1, 2).setFormula('=SUMIFS(Transações!$C:$C,' + periodo + ',Transações!$D:$D,"Entrada",Transações!$E:$E,"Receita")');
+      resumo.getRange(i + 1, 2).setFormula("=SUMIFS('Transações'!$C:$C," + periodo + ",'Transações'!$D:$D,\"Entrada\",'Transações'!$E:$E,\"Receita\")");
     }
     if (rotulos[i][0] === 'Saídas registradas no mês') {
-      resumo.getRange(i + 1, 2).setFormula('=SUMPRODUCT(SUMIFS(Transações!$C:$C,' + periodo +
-        ',Transações!$D:$D,"Saída",Transações!$E:$E,{"Variável","Parcela","Mensalidade"}))');
+      resumo.getRange(i + 1, 2).setFormula("=SUMPRODUCT(SUMIFS('Transações'!$C:$C," + periodo +
+        ",'Transações'!$D:$D,\"Saída\",'Transações'!$E:$E,{\"Variável\",\"Parcela\",\"Mensalidade\"}))");
     }
     if (rotulos[i][0] === 'Patrimônio investido') {
-      resumo.getRange(i + 1, 2).setFormula('=SUM(Investimentos!$F:$F)+SUMIFS(Contas!$C:$C,Contas!$B:$B,"Conta investimento")');
+      resumo.getRange(i + 1, 2).setFormula('=ARRAYFORMULA(SUM(IFERROR(Investimentos!$F$2:$F*1,0)))+SUMIFS(Contas!$C:$C,Contas!$B:$B,"Conta investimento")');
+    }
+    if (rotulos[i][0] === 'Dívida parcelada restante') {
+      resumo.getRange(i + 1, 2).setFormula('=ARRAYFORMULA(SUM(IFERROR(Parcelados!$H$2:$H*1,0)))');
     }
   }
 }
@@ -444,7 +456,7 @@ function planosParcelados(txs, conta, ref) {
     if (!(m.totalInstallments > 1) || t.type !== 'DEBIT') return;
     var desc = String(t.description || '').replace(/\s*\d+\s*\/\s*\d+\s*$/, '');
     var valor = Math.round(Math.abs(t.amount) * 100) / 100;
-    var k = chave(desc) + '|' + m.totalInstallments + '|' + Math.round(valor);
+    var k = chaveParcelado(t);
     (grupos[k] = grupos[k] || { desc: desc, total: m.totalInstallments, valores: {}, txs: [] })
       .txs.push({ data: String(t.date).slice(0, 10), n: m.installmentNumber || 1 });
     grupos[k].valores[valor] = (grupos[k].valores[valor] || 0) + 1;
@@ -502,6 +514,25 @@ function removerDuplicadasBTG(ss) {
   if (manter.length === linhas.length) return;
   aba.getRange(2, 1, linhas.length, 9).clearContent();
   if (manter.length) aba.getRange(2, 1, manter.length, 9).setValues(manter);
+}
+
+/**
+ * Pix pago com o cartão: a conta recebe "Valor adicionado na conta por cartão de crédito" e o Pix sai logo depois.
+ * O gasto já aparece no cartão, então o Pix da conta vira transferência.
+ */
+function pixPagoComCartao(ss) {
+  var aba = ss.getSheetByName(ABA.transacoes);
+  var linhas = valores(aba, 9);
+  var adicionados = linhas.filter(function (l) {
+    return l[3] === 'Entrada' && l[0] instanceof Date && /valor adicionado/i.test(semAcento(l[1]));
+  });
+  linhas.forEach(function (l, i) {
+    if (l[3] !== 'Saída' || l[4] !== 'Variável' || !(l[0] instanceof Date) || /cart/i.test(l[6])) return;
+    var par = adicionados.some(function (a) {
+      return a[6] === l[6] && Math.abs(a[2] - l[2]) < 0.01 && Math.abs(a[0] - l[0]) <= 864e5;
+    });
+    if (par) aba.getRange(i + 2, 5).setValue('Transferência');
+  });
 }
 
 /** Uma vez só: Pix já gravados que foram para outras pessoas passam a contar como gasto. */
@@ -585,7 +616,6 @@ function reconstruirParcelados(ss, cartoes) {
 
 /** Repete as fórmulas das colunas calculadas quando a linha passa do que veio pronto. */
 function formulasParcelado(aba, r) {
-  if (aba.getRange(r, 9).getFormula()) return;
   var ref = 'Config!$B$4';
   var el = '((YEAR(' + ref + ')-YEAR(D' + r + '))*12+MONTH(' + ref + ')-MONTH(D' + r + '))';
   aba.getRange(r, 6, 1, 4).setFormulas([[
@@ -612,23 +642,55 @@ function diaDeFechamento(ss, conta) {
 }
 
 /**
- * Fatura aberta = compras e parcelas desde o último fechamento, menos pagamentos e estornos.
+ * Fatura aberta = fatura que fechou + compras e parcelas desde o fechamento − pagamentos e estornos.
+ * O pagamento da fatura fechada cai depois do fechamento, por isso ela entra na conta.
  * O "saldo" do cartão na Pluggy é o limite usado (inclui as parcelas futuras), não a fatura.
+ * anterior: total da fatura fechada (null se a Pluggy não informar). ignorados: parcelamentos cancelados.
  */
-function faturaAberta(txs, dia, hoje) {
+function faturaAberta(txs, dia, hoje, anterior, ignorados) {
   if (!dia) return null;
+  ignorados = ignorados || {};
   var fechou = new Date(hoje.getFullYear(), hoje.getMonth(), dia);
   if (fechou > hoje) fechou = new Date(hoje.getFullYear(), hoje.getMonth() - 1, dia);
+  // Sem o total da fatura fechada, os pagamentos dos primeiros dias são dela e ficam de fora.
+  var vencimento = new Date(fechou.getFullYear(), fechou.getMonth(), fechou.getDate() + 10);
   var compras = 0, creditos = 0, achou = false;
   txs.forEach(function (t) {
     var d = dataLocal(t.date);
     if (d < fechou || d > hoje) return;
+    if (ignorados[chaveParcelado(t)]) return;
     achou = true;
-    if (t.type === 'CREDIT') creditos += Math.abs(t.amount); else compras += Math.abs(t.amount);
+    if (t.type !== 'CREDIT') compras += Math.abs(t.amount);
+    else if (anterior != null || d > vencimento || !ehPagamentoDeFatura(t)) creditos += Math.abs(t.amount);
   });
   if (!achou) return null;
   var r = function (v) { return Math.round(v * 100) / 100; };
-  return { valor: r(compras - creditos), compras: r(compras), creditos: r(creditos) };
+  return { valor: r((anterior || 0) + compras - creditos), compras: r(compras), creditos: r(creditos),
+           anterior: anterior == null ? null : r(anterior) };
+}
+
+/** Total da última fatura fechada do cartão (GET /bills), ou null. */
+function ultimaFatura(apiKey, accountId) {
+  try {
+    var faturas = pluggyGet(apiKey, '/bills?accountId=' + encodeURIComponent(accountId)).results || [];
+    if (!faturas.length) return null;
+    var ult = faturas.reduce(function (a, b) { return String(a.dueDate) > String(b.dueDate) ? a : b; });
+    return ult.totalAmount != null ? Math.abs(ult.totalAmount) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function parceladosIgnorados() {
+  return JSON.parse(PropertiesService.getScriptProperties().getProperty('PARCELADOS_IGNORADOS') || '{}');
+}
+
+/** Mesma chave que planosParcelados usa para a compra parcelada (vazia se não for parcela). */
+function chaveParcelado(t) {
+  var m = t.creditCardMetadata || {};
+  if (!(m.totalInstallments > 1)) return '';
+  var desc = String(t.description || '').replace(/\s*\d+\s*\/\s*\d+\s*$/, '');
+  return chave(desc) + '|' + m.totalInstallments + '|' + Math.round(Math.abs(t.amount));
 }
 
 /** Coluna C do cartão passa a ser a fatura aberta; o limite usado fica na coluna G. */
