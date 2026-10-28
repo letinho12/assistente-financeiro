@@ -127,6 +127,7 @@ function sincronizar() {
     resumo.push(investimentos.length + ' investimentos lidos');
     var novas = detectarRecorrentes(ss);
     if (novas) resumo.push(novas + ' mensalidade(s) detectada(s) para revisar');
+    atualizarTotaisDoMes(ss);
     var renda = atualizarRenda(ss);
     if (renda) resumo.push(renda);
     props.setProperty('ULTIMA_SYNC', new Date().toISOString());
@@ -374,23 +375,32 @@ function prepararAbas(ss) {
     resumo.getRange(r, 2).setNumberFormat('"R$" #,##0.00').setBackground('#EEF2F7');
   }
   for (var i = 0; i < rotulos.length; i++) {
-    // Entradas e saídas sem as transferências entre as suas contas e sem aplicações/resgates.
-    var periodo = "'Transações'!$A:$A,\">=\"&Config!$B$4,'Transações'!$A:$A,\"<=\"&EOMONTH(Config!$B$4,0)";
-    if (rotulos[i][0] === 'Entradas registradas no mês') {
-      resumo.getRange(i + 1, 2).setFormula(formula("=SUMIFS('Transações'!$C:$C," + periodo + ",'Transações'!$D:$D,\"Entrada\",'Transações'!$E:$E,\"Receita\")"));
-    }
-    if (rotulos[i][0] === 'Saídas registradas no mês') {
-      resumo.getRange(i + 1, 2).setFormula(formula('=' + ['Variável', 'Parcela', 'Mensalidade'].map(function (c) {
-        return "SUMIFS('Transações'!$C:$C," + periodo + ",'Transações'!$D:$D,\"Saída\",'Transações'!$E:$E,\"" + c + "\")";
-      }).join('+')));
-    }
     if (rotulos[i][0] === 'Patrimônio investido') {
-      resumo.getRange(i + 1, 2).setFormula(formula('=ARRAYFORMULA(SUM(IFERROR(Investimentos!$F$2:$F*1,0)))+SUMIFS(Contas!$C:$C,Contas!$B:$B,"Conta investimento")'));
+      resumo.getRange(i + 1, 2).setFormula('=ARRAYFORMULA(SUM(IFERROR(Investimentos!$F$2:$F*1,0)))+SUMIFS(Contas!$C:$C,Contas!$B:$B,"Conta investimento")');
     }
     if (rotulos[i][0] === 'Dívida parcelada restante') {
-      resumo.getRange(i + 1, 2).setFormula(formula('=ARRAYFORMULA(SUM(IFERROR(Parcelados!$H$2:$H*1,0)))'));
+      resumo.getRange(i + 1, 2).setFormula('=ARRAYFORMULA(SUM(IFERROR(Parcelados!$H$2:$H*1,0)))');
     }
   }
+}
+
+/**
+ * Entradas e saídas do mês no Resumo, sem transferências entre as suas contas e sem aplicações/resgates.
+ * Gravadas como valores pela sincronização.
+ */
+function atualizarTotaisDoMes(ss) {
+  var ref = new Date(ss.getSheetByName(ABA.config).getRange('B4').getValue());
+  var entradas = 0, saidas = 0;
+  valores(ss.getSheetByName(ABA.transacoes), 5).forEach(function (l) {
+    if (!(l[0] instanceof Date) || l[0].getFullYear() !== ref.getFullYear() || l[0].getMonth() !== ref.getMonth()) return;
+    if (l[3] === 'Entrada' && l[4] === 'Receita') entradas += Number(l[2]) || 0;
+    if (l[3] === 'Saída' && /^(Variável|Parcela|Mensalidade)$/.test(l[4])) saidas += Number(l[2]) || 0;
+  });
+  var resumo = ss.getSheetByName('Resumo');
+  resumo.getRange('A1:A40').getValues().forEach(function (l, i) {
+    if (l[0] === 'Entradas registradas no mês') resumo.getRange(i + 1, 2).setValue(Math.round(entradas * 100) / 100);
+    if (l[0] === 'Saídas registradas no mês') resumo.getRange(i + 1, 2).setValue(Math.round(saidas * 100) / 100);
+  });
 }
 
 function garantirColuna(aba, col, titulo) {
@@ -607,25 +617,32 @@ function reconstruirParcelados(ss, cartoes) {
   });
   props.setProperty('PARCELADOS_IGNORADOS', JSON.stringify(ignorados));
   props.setProperty('PARCELADOS_GRAVADOS', JSON.stringify(linhas.map(function (l) { return l[5]; }).filter(String)));
-  if (!linhas.length) return;
+  if (!linhas.length) {
+    if (n >= 2) aba.getRange(2, 6, n - 1, 4).clearContent();
+    return;
+  }
   aba.getRange(2, 1, linhas.length, 5).setValues(linhas.map(function (l) { return l.slice(0, 5); }));
   aba.getRange(2, 10, linhas.length, 1).setValues(linhas.map(function (l) { return [l[5]]; }));
   aba.getRange(2, 4, linhas.length, 1).setNumberFormat('dd/MM/yyyy');
   aba.getRange(2, 2, linhas.length, 1).setNumberFormat('"R$" #,##0.00');
-  for (var r = 2; r < 2 + linhas.length; r++) formulasParcelado(aba, r);
+  aba.getRange(2, 6, linhas.length, 4).setValues(linhas.map(function (l) { return calculosParcelado(l, ref); }));
+  aba.getRange(2, 8, linhas.length, 1).setNumberFormat('"R$" #,##0.00');
+  if (n > linhas.length + 1) aba.getRange(linhas.length + 2, 6, n - linhas.length - 1, 4).clearContent();
 }
 
 /** Repete as fórmulas das colunas calculadas quando a linha passa do que veio pronto. */
-function formulasParcelado(aba, r) {
-  var ref = 'Config!$B$4';
-  var el = '((YEAR(' + ref + ')-YEAR(D' + r + '))*12+MONTH(' + ref + ')-MONTH(D' + r + '))';
-  aba.getRange(r, 6, 1, 4).setFormulas([[
-    '=IF(A' + r + '="","",IF(AND(' + el + '>=0,' + el + '<C' + r + '),' + el + '+1&"/"&C' + r +
-      ',IF(' + el + '<0,"Ainda não começou","Quitado")))',
-    '=IF(A' + r + '="","",MAX(0,MIN(C' + r + ',C' + r + '-' + el + ')))',
-    '=IF(A' + r + '="","",G' + r + '*B' + r + ')',
-    '=IF(A' + r + '="","",IF(AND(' + el + '>=0,' + el + '<C' + r + '),"Sim","Não"))'
-  ]].map(function (l) { return l.map(formula); }));
+/**
+ * Colunas calculadas de Parcelados (F a I), gravadas como valores a cada sincronização.
+ * Fórmulas escritas pelo script com acentos davam #ERROR! na planilha.
+ */
+function calculosParcelado(l, ref) {
+  var total = Number(l[2]), ini = l[3] instanceof Date ? l[3] : new Date(l[3]);
+  if (!total || isNaN(ini)) return ['', '', '', ''];
+  var el = (ref.getFullYear() - ini.getFullYear()) * 12 + ref.getMonth() - ini.getMonth();
+  var ativa = el >= 0 && el < total;
+  var restantes = Math.max(0, Math.min(total, total - el));
+  return [ativa ? (el + 1) + '/' + total : (el < 0 ? 'Ainda não começou' : 'Quitado'),
+          restantes, Math.round(restantes * Number(l[1]) * 100) / 100, ativa ? 'Sim' : 'Não'];
 }
 
 /**
@@ -758,11 +775,11 @@ function reconstruirInvestimentos(ss, lista) {
   aba.getRange(2, 11, linhas.length, 2).setNumberFormat('"R$" #,##0.00'); // valor aplicado e lucro
   aba.getRange(2, 13, linhas.length, 1).setNumberFormat('dd/MM/yyyy');     // vencimento
   for (var r = 2; r < 2 + linhas.length; r++) {
-    if (!aba.getRange(r, 6).getFormula()) aba.getRange(r, 6).setFormula(formula('=IF(A' + r + '="","",D' + r + '*E' + r + ')'));
+    if (!aba.getRange(r, 6).getFormula()) aba.getRange(r, 6).setFormula('=IF(A' + r + '="","",D' + r + '*E' + r + ')');
     // Linha digitada à mão com código da B3 (ex.: PETR4, HGLG11): o preço vem do Google Finance.
     var l = linhas[r - 2];
     if (l[7] === '' && /^[A-Z]{4}\d{1,2}$/.test(String(l[8]).trim().toUpperCase())) {
-      aba.getRange(r, 5).setFormula(formula('=GOOGLEFINANCE("BVMF:"&UPPER(TRIM(J' + r + ')),"price")'));
+      aba.getRange(r, 5).setFormula('=GOOGLEFINANCE("BVMF:"&UPPER(TRIM(J' + r + ')),"price")');
     }
   }
 }
@@ -1007,33 +1024,6 @@ function dataLocal(iso) {
 
 function trim(s) { return s.trim(); }
 
-/**
- * Fórmula no separador que a planilha aceita. Em algumas planilhas em português o script
- * precisa escrever ";" no lugar de "," (senão a célula mostra #ERROR!). Testa uma vez por execução.
- */
-var _separador = null;
-function formula(f) {
-  if (_separador === null) {
-    var c = SpreadsheetApp.getActive().getSheetByName(ABA.config).getRange('Z1');
-    c.setFormula('=SUM(1,2)');
-    SpreadsheetApp.flush();
-    _separador = c.getValue() === 3 ? ',' : ';';
-    c.clearContent();
-  }
-  return _separador === ',' ? f : trocarVirgulas(f);
-}
-
-/** Troca "," por ";" fora de textos entre aspas e de nomes de aba entre apóstrofos. */
-function trocarVirgulas(f) {
-  var out = '', aspas = false, apos = false;
-  for (var i = 0; i < f.length; i++) {
-    var ch = f[i];
-    if (ch === '"' && !apos) aspas = !aspas;
-    else if (ch === "'" && !aspas) apos = !apos;
-    out += (ch === ',' && !aspas && !apos) ? ';' : ch;
-  }
-  return out;
-}
 
 function semAcento(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, ''); }
 
