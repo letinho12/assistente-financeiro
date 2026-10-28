@@ -229,6 +229,7 @@ function itemLista(tit, sub, val, classeVal) {
 function desenharListas(d) {
   var l = limpar($('l-contas'));
   (d.contas || []).forEach(function (c) {
+    if (c.tipo === 'Cartão de crédito' && !c.saldo && !(c.limite > 1)) return; // cartão sem uso (ex.: Itaú com limite R$ 1)
     l.appendChild(itemLista(c.conta, c.tipo + (c.limite ? ' · limite ' + brl.format(c.limite) : ''), brl.format(c.saldo)));
   });
   l = limpar($('l-parcelados'));

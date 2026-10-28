@@ -71,6 +71,7 @@ function sincronizar() {
     var apiKey = pluggyAuth(props);
     var itens = (props.getProperty('PLUGGY_ITEM_IDS') || '').split(',').map(trim).filter(String);
     var mensalidades = lerMensalidades(ss);
+    var titular = nomeDoTitular(ss, apiKey, itens);
 
     var deParcelas = Utilities.formatDate(new Date(Date.now() - DIAS_PARCELAS * 864e5), 'UTC', 'yyyy-MM-dd');
     var cartoes = [], investimentos = [], vistas = {};
@@ -87,9 +88,11 @@ function sincronizar() {
         atualizarConta(ss, nome, conta);
         vistas[nome] = true;
         var txs = pluggyTransacoes(apiKey, conta.id, conta.type === 'CREDIT' ? deParcelas : de);
-        var n = gravarTransacoes(ss, txs.filter(function (t) { return String(t.date).slice(0, 10) >= de; }),
-                                 nome, conta.type, mensalidades);
-        resumo.push(nome + ': ' + n + ' transações novas');
+        // Compras da fatura aberta chegam como pendentes: entram sempre, e são regravadas a cada sincronização.
+        var n = gravarTransacoes(ss, txs.filter(function (t) { return String(t.date).slice(0, 10) >= de || t.status === 'PENDING'; }),
+                                 nome, conta.type, mensalidades, titular);
+        var pend = txs.filter(function (t) { return t.status === 'PENDING'; }).length;
+        resumo.push(nome + ': ' + n + ' transações novas' + (pend ? ' (' + pend + ' pendentes)' : ''));
         if (conta.type === 'CREDIT') cartoes.push({ conta: nome, txs: txs });
       });
       try {
@@ -108,6 +111,8 @@ function sincronizar() {
     evitarPatrimonioDuplicado(ss, investimentos);
     limparContasAntigas(ss, vistas);
     reclassificarBTG(ss);
+    removerDuplicadasBTG(ss);
+    migrarPixParaTerceiros(ss, titular);
     resumo.push(investimentos.length + ' investimentos lidos');
     var novas = detectarRecorrentes(ss);
     if (novas) resumo.push(novas + ' mensalidade(s) detectada(s) para revisar');
@@ -247,13 +252,14 @@ function ehPagamentoDeFatura(tx) {
 }
 
 /** Converte uma transação da Pluggy na linha da aba Transações. */
-function linhaTransacao(tx, conta, tipoConta, chavesMensalidades) {
+function linhaTransacao(tx, conta, tipoConta, chavesMensalidades, titular) {
   var entrada = tx.type === 'CREDIT';
   var cat = categorizar(tx.category);
   var meta = tx.creditCardMetadata || {};
   var classe;
   if (/^BTG/.test(conta)) classe = 'Investimento'; // tudo que passa pela BTG é aplicação ou resgate
-  else if (ehPagamentoDeFatura(tx) || cat === 'Transferência') classe = 'Transferência';
+  else if (ehPagamentoDeFatura(tx)) classe = 'Transferência';
+  else if (cat === 'Transferência') classe = (!entrada && pixParaTerceiro(tx.description, titular)) ? 'Variável' : 'Transferência';
   else if (cat === 'Investimento') classe = 'Investimento';
   else if (entrada) classe = 'Receita';
   else if (meta.totalInstallments > 1) classe = 'Parcela';
@@ -262,6 +268,18 @@ function linhaTransacao(tx, conta, tipoConta, chavesMensalidades) {
   if (cat === 'Transferência' || cat === 'Investimento') cat = 'Outros';
   return [dataLocal(tx.date), tx.description, Math.abs(tx.amount), entrada ? 'Entrada' : 'Saída',
           classe, cat, conta, 'Pluggy', tx.id];
+}
+
+/**
+ * Pix ou transferência enviada para outra pessoa (não para uma conta sua) é gasto.
+ * Reconhece as suas contas pelo nome do titular (ex.: "Pix enviado LEONARDO NEVES ...").
+ */
+function pixParaTerceiro(desc, titular) {
+  var partes = semAcento(titular || '').toLowerCase().split(/\s+/).filter(function (p) { return p.length > 2; });
+  if (partes.length < 2) return false; // sem o nome não dá para saber: continua como transferência
+  var d = semAcento(desc || '').toLowerCase();
+  if (/aplicacao|resgate|rdb|caixinha|cofrinho|valor adicionado|fatura/.test(d)) return false;
+  return !(d.indexOf(partes[0]) >= 0 && d.indexOf(partes[1]) >= 0);
 }
 
 /** Chave para reconhecer o mesmo estabelecimento em meses diferentes. */
@@ -325,6 +343,10 @@ function prepararAbas(ss) {
     cfg.getRange('A10:C10').setValues([['Dinheiro extra no mês', 0, 'Salário acima do normal (ex.: hora extra). Preenchido pelo script']]);
     cfg.getRange('B10').setNumberFormat('"R$" #,##0.00');
   }
+  if (cfg.getRange('A11').getValue() === '') {
+    cfg.getRange('A11:C11').setValues([['Seu nome', '', 'Para separar Pix entre as suas contas de Pix para outras pessoas (que contam como gasto). Preenchido pelo script']]);
+    cfg.getRange('B11').setBackground('#FFF7D6');
+  }
   // Patrimônio inclui o saldo das contas de investimento (ex.: BTG Investimentos).
   var resumo = ss.getSheetByName('Resumo');
   var rotulos = resumo.getRange('A1:A40').getValues();
@@ -335,6 +357,15 @@ function prepararAbas(ss) {
     resumo.getRange(r, 2).setNumberFormat('"R$" #,##0.00').setBackground('#EEF2F7');
   }
   for (var i = 0; i < rotulos.length; i++) {
+    // Entradas e saídas sem as transferências entre as suas contas e sem aplicações/resgates.
+    var periodo = 'Transações!$A:$A,">="&Config!$B$4,Transações!$A:$A,"<="&EOMONTH(Config!$B$4,0)';
+    if (rotulos[i][0] === 'Entradas registradas no mês') {
+      resumo.getRange(i + 1, 2).setFormula('=SUMIFS(Transações!$C:$C,' + periodo + ',Transações!$D:$D,"Entrada",Transações!$E:$E,"Receita")');
+    }
+    if (rotulos[i][0] === 'Saídas registradas no mês') {
+      resumo.getRange(i + 1, 2).setFormula('=SUMPRODUCT(SUMIFS(Transações!$C:$C,' + periodo +
+        ',Transações!$D:$D,"Saída",Transações!$E:$E,{"Variável","Parcela","Mensalidade"}))');
+    }
     if (rotulos[i][0] === 'Patrimônio investido') {
       resumo.getRange(i + 1, 2).setFormula('=SUM(Investimentos!$F:$F)+SUMIFS(Contas!$C:$C,Contas!$B:$B,"Conta investimento")');
     }
@@ -368,13 +399,21 @@ function lerMensalidades(ss) {
   return m;
 }
 
-function gravarTransacoes(ss, txs, conta, tipoConta, mensalidades) {
+function gravarTransacoes(ss, txs, conta, tipoConta, mensalidades, titular) {
   var aba = ss.getSheetByName(ABA.transacoes);
+  removerPendentes(aba, conta);
   var ids = {};
   valores(aba, 9).forEach(function (l) { if (l[8]) ids[l[8]] = true; });
   var amanha = Utilities.formatDate(new Date(Date.now() + 864e5), 'UTC', 'yyyy-MM-dd');
-  var novas = txs.filter(function (t) { return !ids[t.id] && t.status !== 'PENDING' && String(t.date).slice(0, 10) < amanha; })
-    .map(function (t) { return linhaTransacao(t, conta, tipoConta, mensalidades); });
+  var cartao = tipoConta === 'CREDIT';
+  var novas = txs.filter(function (t) {
+    var pendente = t.status === 'PENDING';
+    return !ids[t.id] && (!pendente || cartao) && String(t.date).slice(0, 10) < amanha;
+  }).map(function (t) {
+    var l = linhaTransacao(t, conta, tipoConta, mensalidades, titular);
+    if (t.status === 'PENDING') l[8] = 'pend:' + t.id; // some quando a compra for confirmada
+    return l;
+  });
   if (!novas.length) return 0;
   var ini = ultimaLinhaCom(aba, 1) + 1;
   aba.getRange(ini, 1, novas.length, 9).setValues(novas);
@@ -424,9 +463,63 @@ function planosParcelados(txs, conta, ref) {
     if (mesRef - inicioMes >= g.total) return; // já quitado
     var valor = Object.keys(g.valores).sort(function (a, b) { return g.valores[b] - g.valores[a]; })[0];
     var inicio = new Date(Math.floor(inicioMes / 12), inicioMes % 12, 1);
-    planos.push([g.desc, Number(valor), g.total, inicio, conta, k]);
+    // A mesma compra às vezes vem com nomes diferentes (ex.: "AMAZON PRIME BR" e "Amazon Prime").
+    var mesmo = planos.some(function (p) {
+      return p[2] === g.total && Math.round(p[1]) === Math.round(Number(valor)) && p[3].getTime() === inicio.getTime();
+    });
+    if (!mesmo) planos.push([g.desc, Number(valor), g.total, inicio, conta, k]);
   });
   return planos;
+}
+
+/** Apaga as compras pendentes da conta: a sincronização grava de novo as que continuam pendentes. */
+function removerPendentes(aba, conta) {
+  var linhas = valores(aba, 9);
+  var manter = linhas.filter(function (l) { return !(l[6] === conta && /^pend:/.test(l[8])); });
+  if (manter.length === linhas.length) return;
+  aba.getRange(2, 1, linhas.length, 9).clearContent();
+  if (manter.length) aba.getRange(2, 1, manter.length, 9).setValues(manter);
+}
+
+/** A mesma movimentação da BTG pode vir de duas conexões (a antiga e a "BTG Investimentos"). */
+function removerDuplicadasBTG(ss) {
+  var aba = ss.getSheetByName(ABA.transacoes);
+  var linhas = valores(aba, 9), vistas = {};
+  var manter = linhas.filter(function (l) {
+    if (!/^BTG/.test(l[6]) || l[7] !== 'Pluggy' || !(l[0] instanceof Date)) return true;
+    var k = [l[0].getTime(), l[1], l[2], l[3], l[6]].join('|');
+    if (vistas[k]) return false;
+    return (vistas[k] = true);
+  });
+  if (manter.length === linhas.length) return;
+  aba.getRange(2, 1, linhas.length, 9).clearContent();
+  if (manter.length) aba.getRange(2, 1, manter.length, 9).setValues(manter);
+}
+
+/** Uma vez só: Pix já gravados que foram para outras pessoas passam a contar como gasto. */
+function migrarPixParaTerceiros(ss, titular) {
+  var props = PropertiesService.getScriptProperties();
+  if (!titular || props.getProperty('MIGRACAO_PIX') === '1') return;
+  var aba = ss.getSheetByName(ABA.transacoes);
+  valores(aba, 9).forEach(function (l, i) {
+    if (l[7] === 'Pluggy' && l[3] === 'Saída' && l[4] === 'Transferência' && !/^BTG/.test(l[6]) &&
+        !ehPagamentoDeFatura({ description: l[1] }) && pixParaTerceiro(l[1], titular)) {
+      aba.getRange(i + 2, 5).setValue('Variável');
+    }
+  });
+  props.setProperty('MIGRACAO_PIX', '1');
+}
+
+/** Nome do titular das contas (Config B11). Se estiver vazio, pergunta à Pluggy uma vez. */
+function nomeDoTitular(ss, apiKey, itens) {
+  var cfg = ss.getSheetByName(ABA.config);
+  var nome = String(cfg.getRange('B11').getValue() || '').trim();
+  if (nome) return nome;
+  for (var i = 0; i < itens.length && !nome; i++) {
+    try { nome = (pluggyGet(apiKey, '/identity?itemId=' + itens[i]) || {}).fullName || ''; } catch (e) { /* conexão sem identidade */ }
+  }
+  if (nome) cfg.getRange('B11').setValue(nome);
+  return nome;
 }
 
 /** Transações antigas da BTG que ainda não estão como Investimento. */
@@ -535,8 +628,8 @@ function reconstruirInvestimentos(ss, lista) {
   if (!linhas.length) return;
   aba.getRange(2, 1, linhas.length, 5).setValues(linhas.map(function (l) { return l.slice(0, 5); }));
   aba.getRange(2, 7, linhas.length, 9).setValues(linhas.map(function (l) { return l.slice(5, 14); }));
-  aba.getRange(2, 10, linhas.length, 2).setNumberFormat('"R$" #,##0.00');
-  aba.getRange(2, 12, linhas.length, 1).setNumberFormat('dd/MM/yyyy');
+  aba.getRange(2, 11, linhas.length, 2).setNumberFormat('"R$" #,##0.00'); // valor aplicado e lucro
+  aba.getRange(2, 13, linhas.length, 1).setNumberFormat('dd/MM/yyyy');     // vencimento
   for (var r = 2; r < 2 + linhas.length; r++) {
     if (!aba.getRange(r, 6).getFormula()) aba.getRange(r, 6).setFormula('=IF(A' + r + '="","",D' + r + '*E' + r + ')');
     // Linha digitada à mão com código da B3 (ex.: PETR4, HGLG11): o preço vem do Google Finance.
