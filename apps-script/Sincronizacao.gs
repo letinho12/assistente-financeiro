@@ -377,17 +377,18 @@ function prepararAbas(ss) {
     // Entradas e saídas sem as transferências entre as suas contas e sem aplicações/resgates.
     var periodo = "'Transações'!$A:$A,\">=\"&Config!$B$4,'Transações'!$A:$A,\"<=\"&EOMONTH(Config!$B$4,0)";
     if (rotulos[i][0] === 'Entradas registradas no mês') {
-      resumo.getRange(i + 1, 2).setFormula("=SUMIFS('Transações'!$C:$C," + periodo + ",'Transações'!$D:$D,\"Entrada\",'Transações'!$E:$E,\"Receita\")");
+      resumo.getRange(i + 1, 2).setFormula(formula("=SUMIFS('Transações'!$C:$C," + periodo + ",'Transações'!$D:$D,\"Entrada\",'Transações'!$E:$E,\"Receita\")"));
     }
     if (rotulos[i][0] === 'Saídas registradas no mês') {
-      resumo.getRange(i + 1, 2).setFormula("=SUMPRODUCT(SUMIFS('Transações'!$C:$C," + periodo +
-        ",'Transações'!$D:$D,\"Saída\",'Transações'!$E:$E,{\"Variável\",\"Parcela\",\"Mensalidade\"}))");
+      resumo.getRange(i + 1, 2).setFormula(formula('=' + ['Variável', 'Parcela', 'Mensalidade'].map(function (c) {
+        return "SUMIFS('Transações'!$C:$C," + periodo + ",'Transações'!$D:$D,\"Saída\",'Transações'!$E:$E,\"" + c + "\")";
+      }).join('+')));
     }
     if (rotulos[i][0] === 'Patrimônio investido') {
-      resumo.getRange(i + 1, 2).setFormula('=ARRAYFORMULA(SUM(IFERROR(Investimentos!$F$2:$F*1,0)))+SUMIFS(Contas!$C:$C,Contas!$B:$B,"Conta investimento")');
+      resumo.getRange(i + 1, 2).setFormula(formula('=ARRAYFORMULA(SUM(IFERROR(Investimentos!$F$2:$F*1,0)))+SUMIFS(Contas!$C:$C,Contas!$B:$B,"Conta investimento")'));
     }
     if (rotulos[i][0] === 'Dívida parcelada restante') {
-      resumo.getRange(i + 1, 2).setFormula('=ARRAYFORMULA(SUM(IFERROR(Parcelados!$H$2:$H*1,0)))');
+      resumo.getRange(i + 1, 2).setFormula(formula('=ARRAYFORMULA(SUM(IFERROR(Parcelados!$H$2:$H*1,0)))'));
     }
   }
 }
@@ -624,7 +625,7 @@ function formulasParcelado(aba, r) {
     '=IF(A' + r + '="","",MAX(0,MIN(C' + r + ',C' + r + '-' + el + ')))',
     '=IF(A' + r + '="","",G' + r + '*B' + r + ')',
     '=IF(A' + r + '="","",IF(AND(' + el + '>=0,' + el + '<C' + r + '),"Sim","Não"))'
-  ]]);
+  ]].map(function (l) { return l.map(formula); }));
 }
 
 /**
@@ -757,11 +758,11 @@ function reconstruirInvestimentos(ss, lista) {
   aba.getRange(2, 11, linhas.length, 2).setNumberFormat('"R$" #,##0.00'); // valor aplicado e lucro
   aba.getRange(2, 13, linhas.length, 1).setNumberFormat('dd/MM/yyyy');     // vencimento
   for (var r = 2; r < 2 + linhas.length; r++) {
-    if (!aba.getRange(r, 6).getFormula()) aba.getRange(r, 6).setFormula('=IF(A' + r + '="","",D' + r + '*E' + r + ')');
+    if (!aba.getRange(r, 6).getFormula()) aba.getRange(r, 6).setFormula(formula('=IF(A' + r + '="","",D' + r + '*E' + r + ')'));
     // Linha digitada à mão com código da B3 (ex.: PETR4, HGLG11): o preço vem do Google Finance.
     var l = linhas[r - 2];
     if (l[7] === '' && /^[A-Z]{4}\d{1,2}$/.test(String(l[8]).trim().toUpperCase())) {
-      aba.getRange(r, 5).setFormula('=GOOGLEFINANCE("BVMF:"&UPPER(TRIM(J' + r + ')),"price")');
+      aba.getRange(r, 5).setFormula(formula('=GOOGLEFINANCE("BVMF:"&UPPER(TRIM(J' + r + ')),"price")'));
     }
   }
 }
@@ -1005,6 +1006,34 @@ function dataLocal(iso) {
 }
 
 function trim(s) { return s.trim(); }
+
+/**
+ * Fórmula no separador que a planilha aceita. Em algumas planilhas em português o script
+ * precisa escrever ";" no lugar de "," (senão a célula mostra #ERROR!). Testa uma vez por execução.
+ */
+var _separador = null;
+function formula(f) {
+  if (_separador === null) {
+    var c = SpreadsheetApp.getActive().getSheetByName(ABA.config).getRange('Z1');
+    c.setFormula('=SUM(1,2)');
+    SpreadsheetApp.flush();
+    _separador = c.getValue() === 3 ? ',' : ';';
+    c.clearContent();
+  }
+  return _separador === ',' ? f : trocarVirgulas(f);
+}
+
+/** Troca "," por ";" fora de textos entre aspas e de nomes de aba entre apóstrofos. */
+function trocarVirgulas(f) {
+  var out = '', aspas = false, apos = false;
+  for (var i = 0; i < f.length; i++) {
+    var ch = f[i];
+    if (ch === '"' && !apos) aspas = !aspas;
+    else if (ch === "'" && !aspas) apos = !apos;
+    out += (ch === ',' && !aspas && !apos) ? ';' : ch;
+  }
+  return out;
+}
 
 function semAcento(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, ''); }
 
