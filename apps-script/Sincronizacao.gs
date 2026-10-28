@@ -127,7 +127,6 @@ function sincronizar() {
     resumo.push(investimentos.length + ' investimentos lidos');
     var novas = detectarRecorrentes(ss);
     if (novas) resumo.push(novas + ' mensalidade(s) detectada(s) para revisar');
-    atualizarTotaisDoMes(ss);
     var renda = atualizarRenda(ss);
     if (renda) resumo.push(renda);
     props.setProperty('ULTIMA_SYNC', new Date().toISOString());
@@ -140,6 +139,7 @@ function sincronizar() {
     resumo.push('Bitcoin: ' + e.message);
   }
 
+  atualizarTotaisDoMes(ss);
   marcarUltimaSync(ss);
   Logger.log(resumo.join('\n'));
   avisar(resumo.join('\n') || 'Nada configurado ainda. Veja as Propriedades do script.');
@@ -375,12 +375,6 @@ function prepararAbas(ss) {
     resumo.getRange(r, 2).setNumberFormat('"R$" #,##0.00').setBackground('#EEF2F7');
   }
   for (var i = 0; i < rotulos.length; i++) {
-    if (rotulos[i][0] === 'Patrimônio investido') {
-      resumo.getRange(i + 1, 2).setFormula('=ARRAYFORMULA(SUM(IFERROR(Investimentos!$F$2:$F*1,0)))+SUMIFS(Contas!$C:$C,Contas!$B:$B,"Conta investimento")');
-    }
-    if (rotulos[i][0] === 'Dívida parcelada restante') {
-      resumo.getRange(i + 1, 2).setFormula('=ARRAYFORMULA(SUM(IFERROR(Parcelados!$H$2:$H*1,0)))');
-    }
   }
 }
 
@@ -396,10 +390,20 @@ function atualizarTotaisDoMes(ss) {
     if (l[3] === 'Entrada' && l[4] === 'Receita') entradas += Number(l[2]) || 0;
     if (l[3] === 'Saída' && /^(Variável|Parcela|Mensalidade)$/.test(l[4])) saidas += Number(l[2]) || 0;
   });
+  var soma = function (lista) {
+    return Math.round(lista.reduce(function (t, v) { return t + (typeof v === 'number' ? v : 0); }, 0) * 100) / 100;
+  };
+  SpreadsheetApp.flush();
+  var patrimonio = soma(valores(ss.getSheetByName(ABA.investimentos), 6).map(function (l) { return l[5]; })
+    .concat(valores(ss.getSheetByName(ABA.contas), 3).filter(function (l) { return l[1] === 'Conta investimento'; })
+      .map(function (l) { return l[2]; })));
+  var divida = soma(valores(ss.getSheetByName(ABA.parcelados), 8).map(function (l) { return l[7]; }));
   var resumo = ss.getSheetByName('Resumo');
   resumo.getRange('A1:A40').getValues().forEach(function (l, i) {
     if (l[0] === 'Entradas registradas no mês') resumo.getRange(i + 1, 2).setValue(Math.round(entradas * 100) / 100);
     if (l[0] === 'Saídas registradas no mês') resumo.getRange(i + 1, 2).setValue(Math.round(saidas * 100) / 100);
+    if (l[0] === 'Patrimônio investido') resumo.getRange(i + 1, 2).setValue(patrimonio);
+    if (l[0] === 'Dívida parcelada restante') resumo.getRange(i + 1, 2).setValue(divida);
   });
 }
 
@@ -457,7 +461,8 @@ function gravarTransacoes(ss, txs, conta, tipoConta, mensalidades, titular) {
  * Monta os parcelamentos ativos a partir das transações do cartão.
  * Cada parcela vem como uma transação; todas as parcelas da mesma compra viram uma linha só.
  */
-function planosParcelados(txs, conta, ref) {
+function planosParcelados(txs, conta, ref, hoje) {
+  hoje = hoje || new Date();
   // A Pluggy manda cada parcela como uma transação, incluindo as futuras, e as datas nem sempre seguem
   // o mesmo padrão. Agrupamos por loja + nº de parcelas + valor (em reais inteiros, porque a 1ª parcela
   // às vezes difere em centavos) e deduzimos em que parcela a compra está neste mês.
@@ -492,6 +497,12 @@ function planosParcelados(txs, conta, ref) {
       inicioMes = mes(ult.data) - (ult.n - 1);
     }
     if (mesRef - inicioMes >= g.total) return; // já quitado
+    // Parcela do mês que não veio: a compra foi antecipada (paga por inteiro) ou cancelada.
+    // Cada parcela cai todo mês no mesmo dia da última; damos 3 dias de folga.
+    if (ultimoMes < mesRef && hoje.getFullYear() * 12 + hoje.getMonth() === mesRef) {
+      var ultima = g.txs.reduce(function (a, b) { return a.data > b.data ? a : b; });
+      if (hoje.getDate() > dataLocal(ultima.data).getDate() + 3) return;
+    }
     var valor = Object.keys(g.valores).sort(function (a, b) { return g.valores[b] - g.valores[a]; })[0];
     var inicio = new Date(Math.floor(inicioMes / 12), inicioMes % 12, 1);
     // A mesma compra às vezes vem com nomes diferentes (ex.: "AMAZON PRIME BR" e "Amazon Prime").
@@ -641,7 +652,8 @@ function calculosParcelado(l, ref) {
   var el = (ref.getFullYear() - ini.getFullYear()) * 12 + ref.getMonth() - ini.getMonth();
   var ativa = el >= 0 && el < total;
   var restantes = Math.max(0, Math.min(total, total - el));
-  return [ativa ? (el + 1) + '/' + total : (el < 0 ? 'Ainda não começou' : 'Quitado'),
+  // "4 de 12" e não "4/12": a planilha transformava "4/12" em data.
+  return [ativa ? (el + 1) + ' de ' + total : (el < 0 ? 'Ainda não começou' : 'Quitado'),
           restantes, Math.round(restantes * Number(l[1]) * 100) / 100, ativa ? 'Sim' : 'Não'];
 }
 
