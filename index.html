@@ -46,17 +46,16 @@
   </section>
 
   <!-- Esqueleto enquanto chega o primeiro dado -->
-  <div id="esqueleto" class="bento" aria-hidden="true" hidden>
-    <div class="cartao s-12 esq"><i style="width:40%"></i><i class="grande" style="width:70%"></i><i style="width:90%"></i></div>
-    <div class="cartao s-6 esq"><i style="width:50%"></i><i style="width:80%"></i></div>
-    <div class="cartao s-6 esq"><i style="width:50%"></i><i style="width:80%"></i></div>
+  <div id="esqueleto" class="esq" aria-hidden="true" hidden>
+    <i style="width:40%"></i><i class="grande" style="width:70%"></i><i style="width:90%"></i>
+    <i style="width:30%;margin-top:40px"></i><i class="linha"></i><i class="linha"></i><i class="linha"></i>
   </div>
 
   <div id="conteudo" hidden>
     <!-- Início: estou bem este mês? -->
-    <div class="aba bento" id="aba-inicio" data-titulo="Início">
-      <section class="cartao heroi s-12" aria-live="polite">
-        <h2>Ainda posso gastar este mês</h2>
+    <div class="aba" id="aba-inicio" data-titulo="Início">
+      <section class="heroi" aria-live="polite">
+        <p class="rotulo">Ainda posso gastar este mês</p>
         <p class="numero-heroi" id="h-restante">—</p>
         <p class="status" id="h-status"></p>
         <div class="medidor" role="img" id="h-medidor-rotulo"><div class="medidor-barra" id="h-medidor"></div></div>
@@ -64,10 +63,13 @@
         <details class="cascata-det"><summary>De onde vem esse limite</summary><dl class="cascata" id="cascata"></dl></details>
       </section>
 
-      <section class="s-12 prioridades" id="prioridades" aria-label="O que pede atenção"></section>
+      <section class="secao">
+        <h2>Pede atenção</h2>
+        <ul class="grupo linhas" id="prioridades"></ul>
+      </section>
 
-      <section class="cartao insight s-12" id="insight" hidden>
-        <h2 id="insight-rotulo">Análise do assistente</h2>
+      <section class="insight" id="insight" hidden>
+        <p class="rotulo" id="insight-rotulo">Análise do assistente</p>
         <p class="veredito" id="insight-titulo"></p>
         <p id="insight-texto"></p>
         <ul id="insight-dicas"></ul>
@@ -75,29 +77,33 @@
         <p class="sub" id="insight-data"></p>
       </section>
 
-      <section class="grade-tiles s-12" id="tiles"></section>
+      <section class="secao">
+        <h2>O mês em números</h2>
+        <div class="stats" id="tiles"></div>
+      </section>
     </div>
 
     <!-- Gastos: para onde foi meu dinheiro? -->
-    <div class="aba bento" id="aba-gastos" data-titulo="Gastos" hidden>
-      <section class="cartao s-12">
-        <h2>Gasto variável por categoria</h2>
-        <p class="numero-medio" id="g-total"></p>
-        <div class="barras-h" id="g-categorias"></div>
-        <p class="vazio" id="g-categorias-vazio" hidden>Nenhum gasto variável neste mês ainda. Assim que uma compra cair no cartão ou na conta, ela aparece aqui.</p>
+    <div class="aba" id="aba-gastos" data-titulo="Gastos" hidden>
+      <section class="heroi compacto">
+        <p class="rotulo">Gasto do dia a dia neste mês</p>
+        <p class="numero-heroi neutro" id="g-total">—</p>
+        <div class="faixa" id="g-faixa" role="img"></div>
+        <ol class="ranking" id="g-categorias"></ol>
+        <p class="vazio" id="g-categorias-vazio" hidden>Nenhum gasto do dia a dia neste mês ainda. Assim que uma compra cair no cartão ou na conta, ela aparece aqui.</p>
       </section>
-      <section class="cartao s-12">
+      <section class="secao">
         <h2>Transações</h2>
         <div class="chips" id="filtros" role="group" aria-label="Filtrar transações"></div>
         <div id="l-transacoes"></div>
-        <p class="sub legenda-lista">Transferências entre as suas contas, pagamento de fatura e aplicações aparecem esmaecidas e não contam como gasto.</p>
+        <p class="sub legenda-lista">Esmaecidas: transferências entre as suas contas, pagamento de fatura e aplicações. Elas não contam como gasto.</p>
       </section>
     </div>
 
     <!-- Cartão: quanto é a fatura e o que já está parcelado? -->
-    <div class="aba bento" id="aba-cartao" data-titulo="Cartão" hidden>
-      <section class="cartao heroi s-12">
-        <h2>Fatura atual · Nubank</h2>
+    <div class="aba" id="aba-cartao" data-titulo="Cartão" hidden>
+      <section class="heroi compacto">
+        <p class="rotulo">Fatura atual · Nubank</p>
         <p class="numero-heroi neutro" id="c-fatura">—</p>
         <p class="sub" id="c-fecha"></p>
         <div class="limite">
@@ -105,52 +111,50 @@
           <p class="sub" id="c-limite"></p>
         </div>
       </section>
-      <section class="cartao s-12">
-        <h2>Próximas faturas · já comprometido</h2>
+      <section class="secao">
+        <h2>Próximas faturas, já comprometido</h2>
         <div class="legenda" aria-hidden="true">
           <span><i class="chip s1"></i>Parcelas</span><span><i class="chip s2"></i>Mensalidades</span>
         </div>
         <div class="colunas-grafico" id="g-faturas" role="img"></div>
         <p class="sub" id="g-faturas-toque">Toque em um mês para ver o detalhe.</p>
       </section>
-      <section class="cartao s-12">
+      <section class="secao">
         <h2>Parcelamentos ativos</h2>
         <p class="sub topo-lista" id="p-resumo"></p>
-        <ul class="lista" id="l-parcelados"></ul>
+        <ul class="grupo lista" id="l-parcelados"></ul>
       </section>
     </div>
 
     <!-- Investimentos: quanto tenho? -->
-    <div class="aba bento" id="aba-invest" data-titulo="Investimentos" hidden>
-      <section class="cartao heroi s-12">
-        <h2>Patrimônio investido</h2>
+    <div class="aba" id="aba-invest" data-titulo="Investimentos" hidden>
+      <section class="heroi compacto">
+        <p class="rotulo">Patrimônio investido</p>
         <p class="numero-heroi neutro" id="p-total">—</p>
+        <div class="faixa" id="p-faixa" role="img"></div>
+        <ul class="legenda-faixa" id="g-patrimonio"></ul>
         <p class="sub" id="p-atualizado"></p>
       </section>
-      <section class="cartao s-12">
-        <h2>Por tipo</h2>
-        <div class="barras-h" id="g-patrimonio"></div>
-      </section>
-      <section class="cartao s-12">
+      <section class="secao">
         <h2>Aplicações</h2>
-        <ul class="lista" id="l-invest"></ul>
+        <ul class="grupo lista" id="l-invest"></ul>
       </section>
     </div>
 
     <!-- Mais: mensalidades, contas e ajustes -->
-    <div class="aba bento" id="aba-mais" data-titulo="Mais" hidden>
-      <section class="cartao s-12">
+    <div class="aba" id="aba-mais" data-titulo="Mais" hidden>
+      <section class="secao">
         <h2>Mensalidades e assinaturas</h2>
         <p class="numero-medio" id="m-total"></p>
-        <ul class="lista" id="l-mensalidades"></ul>
+        <ul class="grupo lista" id="l-mensalidades"></ul>
       </section>
-      <section class="cartao s-12">
+      <section class="secao">
         <h2>Contas conectadas</h2>
-        <ul class="lista" id="l-contas"></ul>
+        <ul class="grupo lista" id="l-contas"></ul>
       </section>
-      <section class="cartao s-12">
+      <section class="secao">
         <h2>Ajustes</h2>
-        <ul class="lista ajustes">
+        <ul class="grupo lista ajustes">
           <li><div class="l-main"><div class="l-tit">Ocultar valores ao abrir</div><div class="l-sub">Útil para abrir o app em público</div></div>
             <label class="chave"><input type="checkbox" id="aj-ocultar"><span></span></label></li>
           <li><div class="l-main"><div class="l-tit">Conectar de novo à planilha</div><div class="l-sub">Se trocar o link do script</div></div>

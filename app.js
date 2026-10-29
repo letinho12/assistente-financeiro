@@ -248,33 +248,47 @@ function desenharCascata(r) {
   dl.append(el('dt', { classe: 'total', texto: '= Limite do mês' }), el('dd', { classe: 'total' + (pode < 0 ? ' negativo' : ''), texto: rs(pode) }));
 }
 
-/** Cartões do Início ordenados por urgência: fatura perto de fechar, mensalidades da semana, parcelas do mês. */
+/** "Pede atenção": uma lista só, ordenada por urgência (fatura perto de fechar, mensalidades da semana, parcelas do mês). */
 function desenharPrioridades(d) {
   var r = d.resumo || {}, itens = [];
   var fecha = proximoFechamento(d.fechamento);
   if (r['Fatura atual (Nubank)'] != null) {
-    itens.push({ urg: fecha ? fecha.dias : 30, aba: 'cartao', rot: 'Fatura Nubank',
-      val: rs(r['Fatura atual (Nubank)']), sub: fecha ? 'Fecha ' + (fecha.dias === 0 ? 'hoje' : fecha.dias === 1 ? 'amanhã' : 'em ' + fecha.dias + ' dias') + ' · ' + dataCurta(fecha.iso) : 'Em aberto' });
+    itens.push({ urg: fecha ? fecha.dias : 30, aba: 'cartao', icone: 'cartao', tit: 'Fatura do Nubank',
+      val: rs(r['Fatura atual (Nubank)']), sub: fecha ? 'Fecha ' + (fecha.dias === 0 ? 'hoje' : fecha.dias === 1 ? 'amanhã' : 'em ' + fecha.dias + ' dias') + ', ' + dataCurta(fecha.iso) : 'Em aberto' });
   }
   var semana = proximasMensalidades(d.mensalidades || [], 7);
   if (semana.length) {
-    var tot = semana.reduce(function (s, m) { return s + m.valor; }, 0);
-    itens.push({ urg: semana[0].dias, aba: 'mais', rot: 'Mensalidades em 7 dias', val: rs(tot),
-      sub: semana.map(function (m) { return nomeLimpo(m.nome); }).slice(0, 3).join(', ') });
+    itens.push({ urg: semana[0].dias, aba: 'mais', icone: 'repete', tit: semana.length + (semana.length === 1 ? ' mensalidade' : ' mensalidades') + ' nos próximos 7 dias',
+      val: rs(semana.reduce(function (s, m) { return s + m.valor; }, 0)), sub: semana.map(function (m) { return nomeLimpo(m.nome); }).slice(0, 3).join(', ') });
   }
   if (r['(-) Parcelados do mês'] > 0) {
-    itens.push({ urg: 20, aba: 'cartao', rot: 'Parcelas deste mês', val: rs(r['(-) Parcelados do mês']),
-      sub: (d.parcelados || []).length + ' compras parceladas ativas' });
+    var n = (d.parcelados || []).length;
+    itens.push({ urg: 20, aba: 'cartao', icone: 'parcela', tit: 'Parcelas deste mês', val: rs(r['(-) Parcelados do mês']),
+      sub: n + (n === 1 ? ' compra parcelada' : ' compras parceladas') });
   }
   itens.sort(function (a, b) { return a.urg - b.urg; });
-  var box = limpar($('prioridades'));
+  var ul = limpar($('prioridades'));
   itens.forEach(function (i) {
-    var a = el('a', { classe: 'prioridade', href: '#/' + i.aba }, [
-      el('p', { classe: 't-rot', texto: i.rot }), el('p', { classe: 't-val', texto: i.val }), el('p', { classe: 't-sub', texto: i.sub }),
+    ul.appendChild(el('li', {}, [el('a', { href: '#/' + i.aba, classe: 'linha-link' }, [
+      icone(i.icone),
+      el('div', { classe: 'l-main' }, [el('div', { classe: 'l-tit', texto: i.tit }), el('div', { classe: 'l-sub', texto: i.sub })]),
+      el('div', { classe: 'l-val', texto: i.val }),
       el('span', { classe: 'seta', 'aria-hidden': 'true', texto: '›' })
-    ]);
-    box.appendChild(a);
+    ])]));
   });
+  ul.closest('.secao').hidden = !itens.length;
+}
+
+var ICONES = {
+  cartao: 'M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2H3zm0 4h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zm3 5v2h5v-2z',
+  repete: 'M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z',
+  parcela: 'M4 5h16v3H4zm0 5.5h16v3H4zM4 16h10v3H4z'
+};
+function icone(nome) {
+  var ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg'), path = document.createElementNS(ns, 'path');
+  svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true');
+  path.setAttribute('d', ICONES[nome]); svg.appendChild(path);
+  return el('span', { classe: 'avatar icone-' + nome }, [svg]);
 }
 
 function proximoFechamento(dia) {
@@ -325,29 +339,59 @@ function desenharInsight(d) {
 }
 
 function desenharTiles(r) {
-  var tiles = [
-    ['Renda base', r['Renda mensal'], 'salário normal', 'inicio'],
-    ['Dinheiro extra', r['Dinheiro extra no mês'], 'acima do salário', 'inicio'],
+  var stats = [
+    ['Renda base', r['Renda mensal'], 'salário normal', ''],
+    ['Dinheiro extra', r['Dinheiro extra no mês'], 'acima do salário', ''],
     ['Dívida parcelada', r['Dívida parcelada restante'], 'falta pagar', 'cartao'],
     ['Patrimônio', r['Patrimônio investido'], 'investido', 'invest']
   ];
   var box = limpar($('tiles'));
-  tiles.forEach(function (t) {
+  stats.forEach(function (t) {
     if (t[1] === undefined) return;
     var filhos = [el('p', { classe: 't-rot', texto: t[0] }), el('p', { classe: 't-val', texto: rs(t[1]) }), el('p', { classe: 't-sub', texto: t[2] })];
-    box.appendChild(t[3] !== 'inicio' ? el('a', { classe: 'tile', href: '#/' + t[3] }, filhos) : el('div', { classe: 'tile' }, filhos));
+    box.appendChild(t[3] ? el('a', { classe: 'stat', href: '#/' + t[3] }, filhos) : el('div', { classe: 'stat' }, filhos));
   });
 }
 
 // ---------------------------------------------------------------- Gastos
 
+/**
+ * Para onde foi o dinheiro: uma faixa de parte-do-todo com a maior categoria em destaque (ênfase)
+ * e as demais em cinza, seguida do ranking em texto. Tocar numa categoria filtra as transações.
+ */
 function desenharGastos(d) {
   var cats = (d.categorias || []).filter(function (c) { return c.valor > 0; }).sort(function (a, b) { return b.valor - a.valor; });
+  var total = cats.reduce(function (s, c) { return s + c.valor; }, 0);
   $('g-total').textContent = rs((d.resumo || {})['Gasto variável até agora']);
-  desenharBarras($('g-categorias'), cats.map(function (c) {
-    return { rotulo: c.categoria, valor: c.valor, acao: function () { filtro = c.categoria; desenharTransacoes(dados); $('filtros').scrollIntoView({ behavior: 'smooth' }); } };
-  }), $('g-categorias-vazio'));
+  $('g-categorias-vazio').hidden = cats.length > 0;
+  var foco = cats.filter(function (c) { return c.categoria !== 'Outros'; })[0];
+  var cinzas = ['#5b6170', '#4a4f5c', '#3d414c'];
+  var cor = function (c, i) { return foco && c === foco ? 'var(--acento)' : cinzas[i % cinzas.length]; };
+  desenharFaixa($('g-faixa'), cats.map(function (c, i) { return { rotulo: c.categoria, valor: c.valor, cor: cor(c, i) }; }), total,
+    'Gasto por categoria; o ranking está logo abaixo.');
+  var ol = limpar($('g-categorias'));
+  cats.forEach(function (c, i) {
+    var b = el('button', { type: 'button', classe: 'rank' + (foco && c === foco ? ' foco' : ''), 'aria-label': 'Ver transações de ' + c.categoria }, [
+      el('i', { classe: 'pinta', style: 'background:' + cor(c, i) }),
+      el('span', { classe: 'r-nome', texto: c.categoria }),
+      el('span', { classe: 'r-pct', texto: total ? Math.round(c.valor / total * 100) + '%' : '' }),
+      el('span', { classe: 'r-val', texto: rs(c.valor) })
+    ]);
+    b.addEventListener('click', function () { filtro = c.categoria; desenharTransacoes(dados); $('filtros').scrollIntoView({ behavior: 'smooth' }); });
+    ol.appendChild(el('li', {}, [b]));
+  });
   desenharTransacoes(d);
+}
+
+/** Faixa horizontal de parte-do-todo, com 2px de vão entre os pedaços. */
+function desenharFaixa(box, partes, total, rotulo) {
+  limpar(box).setAttribute('aria-label', rotulo);
+  partes.forEach(function (p) {
+    var seg = el('span', { classe: 'faixa-seg', style: 'background:' + p.cor + ';flex-grow:' + (semAnimacao ? p.valor : 0.0001) });
+    ligarDica(seg, function () { return [p.rotulo, rs(p.valor) + (total ? ' · ' + Math.round(p.valor / total * 100) + '%' : '')]; });
+    box.appendChild(seg);
+    depois(function () { seg.style.flexGrow = p.valor; });
+  });
 }
 
 function contaComoGasto(t) { return t.tipo === 'Saída' && (t.classe === 'Variável' || t.classe === 'Parcela' || t.classe === 'Mensalidade'); }
@@ -388,6 +432,8 @@ function desenharTransacoes(d) {
     if (neutra) selos.push(el('span', { classe: 'selo-mini', texto: 'não conta como gasto' }));
     var sub = t.conta + ' · ' + (t.classe === 'Variável' ? t.categoria : t.classe);
     var li = itemLista(nomeLimpo(t.descricao), sub, (entrada ? '+ ' : '− ') + rs(t.valor), entrada ? 'entrada' : '', null, selos);
+    li.insertBefore(el('span', { classe: 'avatar' + (entrada ? ' entrada' : ''), 'aria-hidden': 'true',
+      texto: entrada ? '+' : (t.classe === 'Variável' ? t.categoria : t.classe).slice(0, 1).toUpperCase() }), li.firstChild);
     li.title = t.descricao;
     if (t.pendente || neutra) li.classList.add('esmaecida');
     ul.appendChild(li);
@@ -446,19 +492,36 @@ function desenharFaturas(fat) {
 
 function desenharInvest(d) {
   var invs = d.investimentos || [], contas = d.contas || [];
-  $('p-total').textContent = rs((d.resumo || {})['Patrimônio investido']);
+  var total = (d.resumo || {})['Patrimônio investido'] || 0;
+  $('p-total').textContent = rs(total);
   var datas = invs.map(function (i) { return i.atualizado; }).filter(Boolean).sort();
   $('p-atualizado').textContent = datas.length ? 'Posições atualizadas em ' + dataCurta(datas[datas.length - 1]) + '. Valores de mercado mudam ao longo do dia.' : '';
-  var porTipo = {};
-  invs.forEach(function (i) { porTipo[i.tipo || 'Outros'] = (porTipo[i.tipo || 'Outros'] || 0) + i.valor; });
-  contas.forEach(function (c) { if (c.tipo === 'Conta investimento') porTipo['Saldo em corretora'] = (porTipo['Saldo em corretora'] || 0) + c.saldo; });
-  desenharBarras($('g-patrimonio'), Object.keys(porTipo).map(function (k) { return { rotulo: k, valor: porTipo[k] }; })
-    .filter(function (x) { return x.valor > 0; }).sort(function (a, b) { return b.valor - a.valor; }));
+  // Até 3 grupos com cor (paleta validada para fundo escuro) e o resto em "Outros".
+  var grupo = function (tipo) {
+    if (/renda fixa|tesouro|previd/i.test(tipo)) return 'Renda fixa';
+    if (/a[çc][õo]es|etf|fii|cripto|coe/i.test(tipo)) return 'Renda variável';
+    return 'Outros';
+  };
+  var porGrupo = { 'Renda fixa': 0, 'Saldo na corretora': 0, 'Renda variável': 0, 'Outros': 0 };
+  invs.forEach(function (i) { porGrupo[grupo(i.tipo || '')] += i.valor; });
+  contas.forEach(function (c) { if (c.tipo === 'Conta investimento') porGrupo['Saldo na corretora'] += c.saldo; });
+  var cores = { 'Renda fixa': '#0ea5c4', 'Saldo na corretora': '#9085e9', 'Renda variável': '#d55181', 'Outros': '#5b6170' };
+  var partes = Object.keys(porGrupo).filter(function (k) { return porGrupo[k] > 0; })
+    .map(function (k) { return { rotulo: k, valor: porGrupo[k], cor: cores[k] }; });
+  var soma = partes.reduce(function (s, p) { return s + p.valor; }, 0);
+  desenharFaixa($('p-faixa'), partes, soma, 'Patrimônio por tipo; os valores estão na legenda.');
+  var leg = limpar($('g-patrimonio'));
+  partes.forEach(function (p) {
+    leg.appendChild(el('li', {}, [el('i', { classe: 'pinta', style: 'background:' + p.cor }), el('span', { classe: 'r-nome', texto: p.rotulo }),
+      el('span', { classe: 'r-pct', texto: soma ? Math.round(p.valor / soma * 100) + '%' : '' }), el('span', { classe: 'r-val', texto: rs(p.valor) })]));
+  });
   var l = limpar($('l-invest'));
   invs.slice().sort(function (a, b) { return b.valor - a.valor; }).forEach(function (i) {
     var nome = i.codigo ? i.codigo : nomeLimpo(i.ativo).replace(/ - .*/, '');
     var sub = [i.instituicao, i.taxa, i.vencimento ? 'vence ' + dataCurta(i.vencimento) : ''].filter(Boolean).join(' · ');
-    l.appendChild(itemLista(nome, sub, rs(i.valor)));
+    var li = itemLista(nome, sub, rs(i.valor));
+    li.insertBefore(el('span', { classe: 'avatar', style: 'color:' + cores[grupo(i.tipo || '')], texto: (i.codigo || i.instituicao || '?').slice(0, 2).toUpperCase() }), li.firstChild);
+    l.appendChild(li);
   });
   if (!invs.length) l.appendChild(el('li', { classe: 'vazio', texto: 'Nenhuma aplicação chegou pela Pluggy ainda. Elas aparecem aqui depois da próxima sincronização.' }));
 }
@@ -472,7 +535,9 @@ function desenharMais(d) {
   var l = limpar($('l-mensalidades'));
   proximas.forEach(function (m) {
     var quando = m.dias === 0 ? 'Cobra hoje' : m.dias === 1 ? 'Cobra amanhã' : 'Próxima cobrança ' + m.data.getDate() + ' ' + MESES[m.data.getMonth()];
-    l.appendChild(itemLista(nomeLimpo(m.nome), quando, rs(m.valor)));
+    var li = itemLista(nomeLimpo(m.nome), quando, rs(m.valor));
+    li.insertBefore(el('span', { classe: 'avatar dia-chip', 'aria-hidden': 'true' }, [el('b', { texto: String(m.data.getDate()) }), el('small', { texto: MESES[m.data.getMonth()] })]), li.firstChild);
+    l.appendChild(li);
   });
   if (!ms.length) l.appendChild(el('li', { classe: 'vazio', texto: 'Nenhuma assinatura detectada. O app encontra sozinho as cobranças que se repetem todo mês.' }));
   l = limpar($('l-contas'));
@@ -484,23 +549,6 @@ function desenharMais(d) {
 }
 
 // ---------------------------------------------------------------- componentes
-
-function desenharBarras(box, lista, vazio) {
-  limpar(box);
-  if (vazio) vazio.hidden = lista.length > 0;
-  var max = Math.max.apply(null, lista.map(function (x) { return x.valor; }).concat([1]));
-  lista.forEach(function (x) {
-    var barra = el('div', { classe: 'bh-barra', style: semAnimacao ? 'width:' + (x.valor / max * 72).toFixed(1) + '%' : '' });
-    depois(function () { barra.style.width = (x.valor / max * 72).toFixed(1) + '%'; });
-    var filhos = [
-      el('span', { classe: 'bh-rot', texto: x.rotulo, title: x.rotulo }),
-      el('div', { classe: 'bh-trilho' }, [barra, el('span', { classe: 'bh-val', texto: rs(x.valor) })])
-    ];
-    var linha = x.acao ? el('button', { type: 'button', classe: 'bh clicavel', 'aria-label': 'Ver transações de ' + x.rotulo }, filhos) : el('div', { classe: 'bh' }, filhos);
-    if (x.acao) linha.addEventListener('click', x.acao);
-    box.appendChild(linha);
-  });
-}
 
 function itemLista(tit, sub, val, classeVal, progresso, selos) {
   var barra = null;
@@ -550,7 +598,7 @@ function surgir(aba) {
 
 /** Brilho que segue o cursor dentro do cartão. */
 document.addEventListener('pointermove', function (ev) {
-  var c = ev.target.closest && ev.target.closest('.cartao, .tile, .prioridade');
+  var c = ev.target.closest && ev.target.closest('.insight, .grupo');
   if (!c) return;
   var r = c.getBoundingClientRect();
   c.style.setProperty('--x', (ev.clientX - r.left) + 'px');
