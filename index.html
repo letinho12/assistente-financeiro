@@ -4,20 +4,25 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Assistente Financeiro</title>
-<meta name="theme-color" content="#1F3A5F">
+<meta name="theme-color" content="#0A0B10">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Finanças">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<div class="luz-fundo" aria-hidden="true"></div>
+
 <header class="topo">
   <div>
+    <p class="selo"><span class="pulso"></span><span id="sync">Carregando…</span></p>
     <h1 id="titulo-mes">Assistente Financeiro</h1>
-    <p class="sub" id="sync">Carregando…</p>
   </div>
   <button id="atualizar" class="icone" aria-label="Atualizar dados" title="Atualizar">
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
@@ -34,18 +39,18 @@
     <p class="erro" id="cfg-erro" hidden></p>
   </section>
 
-  <div id="conteudo" hidden>
-    <section class="cartao heroi" aria-live="polite">
-      <p class="rotulo">Ainda posso gastar este mês</p>
+  <div id="conteudo" class="bento" hidden>
+    <section class="cartao heroi s-7" id="heroi" aria-live="polite">
+      <h2>Ainda posso gastar este mês</h2>
       <p class="numero-heroi" id="h-restante">—</p>
       <p class="status" id="h-status"></p>
       <div class="medidor" role="img" id="h-medidor-rotulo"><div class="medidor-barra" id="h-medidor"></div></div>
       <p class="sub" id="h-detalhe"></p>
     </section>
 
-    <section class="grade-tiles" id="tiles"></section>
+    <section class="grade-tiles s-5" id="tiles"></section>
 
-    <section class="cartao" id="analise" hidden>
+    <section class="cartao analise s-12" id="analise" hidden>
       <h2>Análise do assistente</h2>
       <p class="veredito" id="a-veredito"></p>
       <p id="a-resumo"></p>
@@ -53,54 +58,49 @@
       <p class="sub" id="a-data"></p>
     </section>
 
-    <div class="colunas">
-      <section class="cartao">
-        <h2>De onde vem o seu limite</h2>
-        <dl class="cascata" id="cascata"></dl>
-      </section>
+    <section class="cartao s-5">
+      <h2>De onde vem o seu limite</h2>
+      <dl class="cascata" id="cascata"></dl>
+    </section>
 
-      <section class="cartao">
-        <h2>Gasto variável por categoria</h2>
-        <div class="barras-h" id="g-categorias"></div>
-        <p class="vazio" id="g-categorias-vazio" hidden>Nenhum gasto variável neste mês ainda.</p>
-      </section>
-    </div>
+    <section class="cartao s-7">
+      <h2>Gasto variável por categoria</h2>
+      <div class="barras-h" id="g-categorias"></div>
+      <p class="vazio" id="g-categorias-vazio" hidden>Nenhum gasto variável neste mês ainda.</p>
+    </section>
 
-    <section class="cartao">
+    <section class="cartao s-12">
       <h2>Faturas do Nubank já comprometidas</h2>
       <div class="legenda" aria-hidden="true">
         <span><i class="chip s1"></i>Parcelas</span><span><i class="chip s2"></i>Mensalidades</span>
       </div>
       <div class="colunas-grafico" id="g-faturas" role="img"></div>
-      <details><summary>Ver como tabela</summary><table id="t-faturas"></table></details>
+      <details><summary>Ver como tabela</summary><div class="tabela-rolagem"><table id="t-faturas"></table></div></details>
     </section>
 
-    <div class="colunas">
-      <section class="cartao">
-        <h2>Patrimônio por tipo</h2>
-        <p class="numero-medio" id="p-total"></p>
-        <div class="barras-h" id="g-patrimonio"></div>
-        <details><summary>Ver aplicações</summary><table id="t-invest"></table></details>
-      </section>
+    <section class="cartao s-7">
+      <h2>Patrimônio por tipo</h2>
+      <p class="numero-medio" id="p-total"></p>
+      <div class="barras-h" id="g-patrimonio"></div>
+      <details><summary>Ver aplicações</summary><div class="tabela-rolagem"><table id="t-invest"></table></div></details>
+    </section>
 
-      <section class="cartao">
-        <h2>Contas</h2>
-        <ul class="lista" id="l-contas"></ul>
-      </section>
-    </div>
+    <section class="cartao s-5">
+      <h2>Contas</h2>
+      <ul class="lista" id="l-contas"></ul>
+    </section>
 
-    <div class="colunas">
-      <section class="cartao">
-        <h2>Parcelamentos ativos</h2>
-        <ul class="lista" id="l-parcelados"></ul>
-      </section>
-      <section class="cartao">
-        <h2>Mensalidades e assinaturas</h2>
-        <ul class="lista" id="l-mensalidades"></ul>
-      </section>
-    </div>
+    <section class="cartao s-6">
+      <h2>Parcelamentos ativos</h2>
+      <ul class="lista" id="l-parcelados"></ul>
+    </section>
 
-    <section class="cartao">
+    <section class="cartao s-6">
+      <h2>Mensalidades e assinaturas</h2>
+      <ul class="lista" id="l-mensalidades"></ul>
+    </section>
+
+    <section class="cartao s-12">
       <h2>Últimas transações</h2>
       <ul class="lista" id="l-transacoes"></ul>
     </section>

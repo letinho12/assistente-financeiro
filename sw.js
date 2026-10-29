@@ -1,5 +1,5 @@
 // Guarda os arquivos do app para abrir sem internet. Os dados ficam no próprio app (último carregamento).
-var VERSAO = 'af-v2';
+var VERSAO = 'af-v3';
 var ARQUIVOS = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', function (e) {

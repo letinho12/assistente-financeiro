@@ -100,31 +100,38 @@ function desenhar(d, doCache) {
   desenharFaturas(d.faturas || []);
   desenharPatrimonio(d.investimentos || [], r['Patrimônio investido'] || 0, d.contas || []);
   desenharListas(d);
+  surgir();
 }
 
 function desenharHeroi(r, alerta) {
   var restante = r['Ainda posso gastar'] || 0, pode = r['Quanto posso gastar no mês'] || 0;
   var usado = pode > 0 ? (r['Gasto variável até agora'] || 0) / pode : 1;
-  $('h-restante').textContent = brl.format(restante);
+  contar($('h-restante'), restante);
   $('h-restante').classList.toggle('negativo', restante < 0);
-  var st = restante < 0 ? ['Acima do limite', 'var(--critico)', '✕'] :
-           usado >= alerta ? ['Atenção', 'var(--atencao)', '!'] : ['Dentro do limite', 'var(--bom)', '✓'];
+  $('h-restante').classList.toggle('positivo', restante >= 0);
+  var st = restante < 0 ? ['Acima do limite', 'var(--critico)', '✕', 'rgba(248,113,113,0.22)'] :
+           usado >= alerta ? ['Atenção', 'var(--atencao)', '!', 'rgba(251,191,36,0.2)'] : ['Dentro do limite', 'var(--bom)', '✓', 'rgba(34,211,238,0.22)'];
+  document.documentElement.style.setProperty('--luz', st[3]); // a luz do fundo acompanha o status
   limpar($('h-status')).append(el('span', { classe: 'ponto', style: 'background:' + st[1] }), el('span', { texto: st[2] + ' ' + st[0] }));
   var pct = Math.max(0, Math.min(1, usado));
-  $('h-medidor').style.width = (pct * 100).toFixed(1) + '%';
   $('h-medidor').style.background = st[1];
+  $('h-medidor').style.boxShadow = '0 0 16px ' + st[1];
+  depois(function () { $('h-medidor').style.width = (pct * 100).toFixed(1) + '%'; });
   $('h-medidor-rotulo').setAttribute('aria-label', Math.round(usado * 100) + '% do limite do mês já usado');
   var dias = r['Dias restantes no mês'] || 0;
-  $('h-detalhe').textContent = pode > 0
-    ? 'Já usou ' + Math.round(usado * 100) + '% de ' + brl.format(pode) + ' · ' + brl.format(r['Posso gastar por dia'] || 0) + ' por dia nos ' + dias + ' dias que faltam'
-    : 'Os compromissos do mês já passam da renda: ' + brl.format(pode) + ' de limite.';
+  var gasto = r['Gasto variável até agora'] || 0;
+  $('h-detalhe').textContent = pode <= 0
+    ? 'Os compromissos do mês já passam da renda: ' + brl.format(pode) + ' de limite.'
+    : restante < 0
+      ? 'Gastou ' + brl.format(gasto) + ' para um limite de ' + brl.format(pode) + '. Faltam ' + dias + ' dias no mês.'
+      : 'Já usou ' + Math.round(usado * 100) + '% de ' + brl.format(pode) + ' · ' + brl.format(r['Posso gastar por dia'] || 0) + ' por dia nos ' + dias + ' dias que faltam';
 }
 
 function desenharTiles(r) {
   var tiles = [
     ['Renda base', r['Renda mensal'], ''],
     ['Dinheiro extra', r['Dinheiro extra no mês'], 'acima do salário normal'],
-    ['Fatura atual Nubank', r['Fatura atual (Nubank)'], ''],
+    ['Fatura atual Nubank', r['Fatura atual (Nubank)'], 'em aberto', 'destaque'],
     ['Próxima fatura', r['Próxima fatura já comprometida'], 'já comprometida'],
     ['Dívida parcelada', r['Dívida parcelada restante'], 'falta pagar'],
     ['Patrimônio', r['Patrimônio investido'], 'investido']
@@ -132,7 +139,7 @@ function desenharTiles(r) {
   var box = limpar($('tiles'));
   tiles.forEach(function (t) {
     if (t[1] === undefined) return;
-    box.appendChild(el('div', { classe: 'tile' }, [
+    box.appendChild(el('div', { classe: 'tile' + (t[3] ? ' ' + t[3] : '') }, [
       el('p', { classe: 't-rot', texto: t[0] }), el('p', { classe: 't-val', texto: brl.format(t[1] || 0) }),
       t[2] ? el('p', { classe: 't-sub', texto: t[2] }) : null
     ]));
@@ -157,7 +164,8 @@ function desenharCascata(r) {
   ];
   var dl = limpar($('cascata'));
   itens.forEach(function (i) { dl.append(el('dt', { texto: i[0] }), el('dd', { texto: brl.format(i[1] || 0) })); });
-  dl.append(el('dt', { classe: 'total', texto: '= Posso gastar no mês' }), el('dd', { classe: 'total', texto: brl.format(r['Quanto posso gastar no mês'] || 0) }));
+  var pode = r['Quanto posso gastar no mês'] || 0;
+  dl.append(el('dt', { classe: 'total', texto: '= Posso gastar no mês' }), el('dd', { classe: 'total' + (pode < 0 ? ' negativo' : ''), texto: brl.format(pode) }));
 }
 
 function desenharBarras(box, dados, vazio) {
@@ -165,7 +173,8 @@ function desenharBarras(box, dados, vazio) {
   if (vazio) vazio.hidden = dados.length > 0;
   var max = Math.max.apply(null, dados.map(function (x) { return x.valor; }).concat([1]));
   dados.forEach(function (x) {
-    var barra = el('div', { classe: 'bh-barra', style: 'width:' + (x.valor / max * 72).toFixed(1) + '%' });
+    var barra = el('div', { classe: 'bh-barra' });
+    depois(function () { barra.style.width = (x.valor / max * 72).toFixed(1) + '%'; });
     var linha = el('div', { classe: 'bh' }, [
       el('span', { classe: 'bh-rot', texto: x.rotulo, title: x.rotulo }),
       el('div', { classe: 'bh-trilho' }, [barra, el('span', { classe: 'bh-val', texto: brl.format(x.valor) })])
@@ -182,7 +191,7 @@ function desenharFaturas(fat) {
   var eixo = el('div', { classe: 'eixo-x', 'aria-hidden': 'true' });
   fat.forEach(function (f, i) {
     var hP = f.parcelas / max * 100, hM = f.mensalidades / max * 100;
-    var pilha = el('div', { classe: 'pilha', style: 'height:' + (hP + hM).toFixed(1) + '%' }, [
+    var pilha = el('div', { classe: 'pilha', style: 'height:' + (hP + hM).toFixed(1) + '%;transform:scaleY(0);transition-delay:' + (i * 40) + 'ms' }, [
       f.parcelas > 0 ? el('div', { classe: 'seg s1' + (f.mensalidades > 0 ? '' : ' topo-seg'), style: 'flex:' + f.parcelas }) : null,
       f.mensalidades > 0 ? el('div', { classe: 'seg s2', style: 'flex:' + f.mensalidades }) : null
     ]);
@@ -195,6 +204,7 @@ function desenharFaturas(fat) {
     eixo.appendChild(el('span', { texto: mesCurto(f.mes) }));
   });
   box.after(eixo);
+  depois(function () { box.querySelectorAll('.pilha').forEach(function (p) { p.style.transform = 'scaleY(1)'; }); });
   box.setAttribute('aria-label', 'Faturas dos próximos 12 meses; o detalhe está na tabela abaixo.');
   var t = limpar($('t-faturas'));
   t.appendChild(el('tr', {}, ['Mês', 'Parcelas', 'Mensalidades', 'Total'].map(function (h, i) { return el('th', { classe: i ? 'n' : '', texto: h }); })));
@@ -219,9 +229,13 @@ function desenharPatrimonio(invs, total, contas) {
   });
 }
 
-function itemLista(tit, sub, val, classeVal) {
+function itemLista(tit, sub, val, classeVal, progresso) {
+  var barra = null;
+  if (progresso != null) {
+    barra = el('div', { classe: 'progresso', 'aria-hidden': 'true' }, [el('i', { style: 'width:' + Math.round(progresso * 100) + '%' })]);
+  }
   return el('li', {}, [
-    el('div', { classe: 'l-main' }, [el('div', { classe: 'l-tit', texto: tit, title: tit }), sub ? el('div', { classe: 'l-sub', texto: sub }) : null]),
+    el('div', { classe: 'l-main' }, [el('div', { classe: 'l-tit', texto: tit, title: tit }), sub ? el('div', { classe: 'l-sub', texto: sub }) : null, barra]),
     el('div', { classe: 'l-val' + (classeVal ? ' ' + classeVal : ''), texto: val })
   ]);
 }
@@ -234,7 +248,9 @@ function desenharListas(d) {
   });
   l = limpar($('l-parcelados'));
   (d.parcelados || []).sort(function (a, b) { return b.parcela - a.parcela; }).forEach(function (p) {
-    l.appendChild(itemLista(p.descricao, 'Parcela ' + p.andamento + ' · faltam ' + brl.format(p.saldo), brl.format(p.parcela)));
+    var m = /(\d+)\D+(\d+)/.exec(String(p.andamento)); // "4 de 12"
+    l.appendChild(itemLista(p.descricao, 'Parcela ' + p.andamento + ' · faltam ' + brl.format(p.saldo), brl.format(p.parcela), '',
+      m ? +m[1] / +m[2] : null));
   });
   if (!l.firstChild) l.appendChild(el('li', { classe: 'vazio', texto: 'Nenhum parcelamento ativo.' }));
   l = limpar($('l-mensalidades'));
@@ -249,6 +265,44 @@ function desenharListas(d) {
       (entrada ? '+ ' : '− ') + brl.format(t.valor), entrada ? 'entrada' : ''));
   });
 }
+
+// ---------------------------------------------------------------- movimento
+
+var semMovimento = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Roda depois do próximo quadro, para as transições de largura/altura partirem do zero. */
+function depois(fn) { requestAnimationFrame(function () { requestAnimationFrame(fn); }); }
+
+/** Contador animado até o valor final. */
+function contar(alvo, valor) {
+  if (semMovimento || alvo.dataset.valor === String(valor)) { alvo.textContent = brl.format(valor); alvo.dataset.valor = valor; return; }
+  alvo.dataset.valor = valor;
+  var ini = performance.now(), dur = 900;
+  (function passo(t) {
+    var k = Math.min(1, (t - ini) / dur), e = 1 - Math.pow(1 - k, 3);
+    alvo.textContent = brl.format(valor * e);
+    if (k < 1) requestAnimationFrame(passo);
+  })(ini);
+}
+
+/** Entrada dos cartões com fade + blur, um depois do outro. */
+function surgir() {
+  document.querySelectorAll('#conteudo > *').forEach(function (n, i) {
+    if (n.dataset.surgiu) return;
+    n.dataset.surgiu = '1';
+    n.style.animationDelay = (i * 60) + 'ms';
+    n.classList.add('surgir');
+  });
+}
+
+/** Brilho que segue o cursor dentro do cartão. */
+document.addEventListener('pointermove', function (ev) {
+  var c = ev.target.closest && ev.target.closest('.cartao, .tile');
+  if (!c) return;
+  var r = c.getBoundingClientRect();
+  c.style.setProperty('--x', (ev.clientX - r.left) + 'px');
+  c.style.setProperty('--y', (ev.clientY - r.top) + 'px');
+}, { passive: true });
 
 // ---------------------------------------------------------------- dica ao passar o mouse / tocar
 
