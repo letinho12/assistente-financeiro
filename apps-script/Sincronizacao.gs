@@ -122,8 +122,8 @@ function sincronizar() {
     limparContasAntigas(ss, vistas);
     reclassificarBTG(ss);
     removerDuplicadasBTG(ss);
-    pixPagoComCartao(ss);
     migrarPixParaTerceiros(ss, titular);
+    pixPagoComCartao(ss);
     resumo.push(investimentos.length + ' investimentos lidos');
     var novas = detectarRecorrentes(ss);
     revisarMensalidades(ss);
@@ -298,6 +298,10 @@ function pixParaTerceiro(desc, titular) {
   if (partes.length < 2) return false; // sem o nome não dá para saber: continua como transferência
   var d = semAcento(desc || '').toLowerCase();
   if (/aplicacao|resgate|rdb|caixinha|cofrinho|valor adicionado|fatura/.test(d)) return false;
+  // Sem destinatário na descrição (ex.: só "Transferência enviada pelo Pix"): é dinheiro saindo
+  // de uma caixinha para você mesmo, não gasto.
+  var destino = d.replace(/transferencia enviada( pelo pix)?|pix enviado|pagamento de pix( qr code)?|[|\-:]/g, '');
+  if (!/[a-z]{3}/.test(destino)) return false;
   return !(d.indexOf(partes[0]) >= 0 && d.indexOf(partes[1]) >= 0);
 }
 
@@ -616,15 +620,15 @@ function pixPagoComCartao(ss) {
 /** Uma vez só: Pix já gravados que foram para outras pessoas passam a contar como gasto. */
 function migrarPixParaTerceiros(ss, titular) {
   var props = PropertiesService.getScriptProperties();
-  if (!titular || props.getProperty('MIGRACAO_PIX') === '1') return;
+  if (!titular || props.getProperty('MIGRACAO_PIX') === '2') return;
   var aba = ss.getSheetByName(ABA.transacoes);
   valores(aba, 9).forEach(function (l, i) {
-    if (l[7] === 'Pluggy' && l[3] === 'Saída' && l[4] === 'Transferência' && !/^BTG/.test(l[6]) &&
-        !ehPagamentoDeFatura({ description: l[1] }) && pixParaTerceiro(l[1], titular)) {
-      aba.getRange(i + 2, 5).setValue('Variável');
-    }
+    if (l[7] !== 'Pluggy' || l[3] !== 'Saída' || /^BTG/.test(l[6]) || ehPagamentoDeFatura({ description: l[1] })) return;
+    var pix = /transfer|pix/i.test(semAcento(l[1]));
+    if (l[4] === 'Transferência' && pixParaTerceiro(l[1], titular)) aba.getRange(i + 2, 5).setValue('Variável');
+    if (l[4] === 'Variável' && pix && !pixParaTerceiro(l[1], titular)) aba.getRange(i + 2, 5).setValue('Transferência');
   });
-  props.setProperty('MIGRACAO_PIX', '1');
+  props.setProperty('MIGRACAO_PIX', '2');
 }
 
 /** Nome do titular das contas (Config B11). Se estiver vazio, pergunta à Pluggy uma vez. */
