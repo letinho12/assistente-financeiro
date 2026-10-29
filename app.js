@@ -223,11 +223,12 @@ function desenharHeroi(r, alerta) {
            usado >= alerta ? ['Atenção', 'var(--atencao)', '!', 'rgba(251,191,36,0.2)'] : ['Dentro do limite', 'var(--bom)', '✓', 'rgba(34,211,238,0.22)'];
   document.documentElement.style.setProperty('--luz', st[3]); // a luz do fundo acompanha o status
   limpar($('h-status')).append(el('span', { classe: 'ponto', style: 'background:' + st[1] }), el('span', { texto: st[2] + ' ' + st[0] }));
-  var pct = Math.max(0, Math.min(1, usado));
-  $('h-medidor').style.background = st[1];
-  $('h-medidor').style.boxShadow = '0 0 16px ' + st[1];
-  $('h-medidor').style.width = semAnimacao ? (pct * 100).toFixed(1) + '%' : '0';
-  depois(function () { $('h-medidor').style.width = (pct * 100).toFixed(1) + '%'; });
+  var pct = Math.max(0, Math.min(1, usado)), anel = $('h-anel');
+  anel.style.stroke = st[1];
+  anel.style.filter = 'drop-shadow(0 0 3px ' + st[1] + ')';
+  anel.style.strokeDashoffset = semAnimacao ? String(100 - pct * 100) : '100';
+  depois(function () { anel.style.strokeDashoffset = String(100 - pct * 100); });
+  $('h-pct').textContent = pode > 0 ? Math.round(usado * 100) + '% do limite usado' : 'sem limite este mês';
   $('h-medidor-rotulo').setAttribute('aria-label', Math.round(usado * 100) + '% do limite do mês já usado');
   var dias = r['Dias restantes no mês'] || 0;
   $('h-detalhe').textContent = pode <= 0

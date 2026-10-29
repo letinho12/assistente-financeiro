@@ -54,13 +54,23 @@
   <div id="conteudo" hidden>
     <!-- Início: estou bem este mês? -->
     <div class="aba" id="aba-inicio" data-titulo="Início">
-      <section class="heroi" aria-live="polite">
-        <p class="rotulo">Ainda posso gastar este mês</p>
-        <p class="numero-heroi" id="h-restante">—</p>
-        <p class="status" id="h-status"></p>
-        <div class="medidor" role="img" id="h-medidor-rotulo"><div class="medidor-barra" id="h-medidor"></div></div>
-        <p class="sub" id="h-detalhe"></p>
-        <details class="cascata-det"><summary>De onde vem esse limite</summary><dl class="cascata" id="cascata"></dl></details>
+      <section class="heroi heroi-anel" aria-live="polite">
+        <div class="anel" role="img" id="h-medidor-rotulo">
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="anel-trilho" cx="60" cy="60" r="52"/>
+            <circle class="anel-arco" id="h-anel" cx="60" cy="60" r="52" pathLength="100"/>
+          </svg>
+          <div class="anel-centro">
+            <p class="rotulo">Ainda posso gastar</p>
+            <p class="numero-heroi" id="h-restante">—</p>
+            <p class="anel-pct" id="h-pct"></p>
+          </div>
+        </div>
+        <div class="heroi-texto">
+          <p class="status" id="h-status"></p>
+          <p class="sub" id="h-detalhe"></p>
+          <details class="cascata-det"><summary>De onde vem esse limite</summary><dl class="cascata" id="cascata"></dl></details>
+        </div>
       </section>
 
       <section class="secao">

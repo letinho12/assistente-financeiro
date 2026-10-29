@@ -90,6 +90,28 @@ h2 { margin: 0 0 12px; }
 .heroi .sub { margin-top: 12px; }
 .limite { margin-top: 18px; }
 
+/* Anel do Início: quanto do limite do mês já foi, com o que sobra no centro. */
+.heroi-anel { display: flex; align-items: center; gap: 40px; }
+.anel { position: relative; width: 280px; aspect-ratio: 1; flex: none; }
+.anel svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+.anel circle { fill: none; stroke-width: 6; }
+.anel-trilho { stroke: rgba(255,255,255,0.07); }
+.anel-arco { stroke-linecap: round; stroke-dasharray: 100 100; stroke-dashoffset: 100; transition: stroke-dashoffset 1.1s cubic-bezier(.2,.8,.2,1); }
+.anel-centro { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 30px; }
+.anel-centro .rotulo { margin: 0; }
+.anel-centro .numero-heroi { font-size: 34px; margin: 8px 0 6px; white-space: nowrap; }
+.anel-pct { margin: 0; color: var(--tinta-2); font: 500 12px/1.4 var(--mono); }
+.heroi-texto { flex: 1; min-width: 0; }
+.heroi-texto .sub { margin-top: 0; }
+@media (max-width: 600px) {
+  .heroi-anel { flex-direction: column; gap: 18px; }
+  .anel { width: min(260px, 72vw); }
+  .anel-centro .numero-heroi { font-size: clamp(26px, 8.4vw, 34px); }
+  .heroi-texto { width: 100%; text-align: center; }
+  .heroi-texto .cascata-det { text-align: left; }
+  .heroi-texto summary { justify-content: center; }
+}
+
 details { margin-top: 14px; font-size: 14px; }
 summary { cursor: pointer; color: var(--tinta-2); font: 500 11px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .06em; min-height: 32px; display: flex; align-items: center; }
 summary:hover { color: var(--acento-2); }
