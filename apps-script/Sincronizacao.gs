@@ -1153,13 +1153,14 @@ function dadosDoApp(ss) {
     .filter(function (l) { return l[0] instanceof Date; })
     .map(function (l) { return { mes: iso(l[0]).slice(0, 7), parcelas: num(l[1]), mensalidades: num(l[2]), total: num(l[3]), qtd: l[4] }; });
 
-  var contas = valores(ss.getSheetByName(ABA.contas), 5).filter(function (l) { return l[0]; })
-    .map(function (l) { return { conta: l[0], tipo: l[1], saldo: num(l[2]), limite: num(l[3]), atualizado: iso(l[4]) }; });
+  var contas = valores(ss.getSheetByName(ABA.contas), 7).filter(function (l) { return l[0]; })
+    .map(function (l) { return { conta: l[0], tipo: l[1], saldo: num(l[2]), limite: num(l[3]), atualizado: iso(l[4]), usado: num(l[6]) }; });
 
   var invAba = ss.getSheetByName(ABA.investimentos);
   var investimentos = valores(invAba, 15).filter(function (l) { return l[0] && num(l[5]) > 0; })
     .map(function (l) { return { ativo: l[0], instituicao: l[1], tipo: l[2], quantidade: l[3], valor: num(l[5]),
-                                 codigo: l[9], aplicado: num(l[10]), lucro: num(l[11]), vencimento: iso(l[12]), taxa: l[13] }; });
+                                 codigo: l[9], aplicado: num(l[10]), lucro: num(l[11]), vencimento: iso(l[12]), taxa: l[13],
+                                 atualizado: iso(l[6]) }; });
 
   var mensalidades = valores(ss.getSheetByName(ABA.mensalidades), 6).filter(function (l) { return l[0] && l[5] === 'Sim'; })
     .map(function (l) { return { nome: l[0], valor: num(l[1]), dia: l[2], conta: l[3] }; });
@@ -1167,11 +1168,12 @@ function dadosDoApp(ss) {
   var parcelados = valores(ss.getSheetByName(ABA.parcelados), 9).filter(function (l) { return l[0] && l[8] === 'Sim'; })
     .map(function (l) { return { descricao: l[0], parcela: num(l[1]), andamento: l[5], restantes: l[6], saldo: num(l[7]) }; });
 
-  var transacoes = valores(ss.getSheetByName(ABA.transacoes), 7)
+  var transacoes = valores(ss.getSheetByName(ABA.transacoes), 9)
     .filter(function (l) { return l[0] instanceof Date; })
     .sort(function (a, b) { return b[0] - a[0]; })
-    .slice(0, 40)
-    .map(function (l) { return { data: iso(l[0]), descricao: l[1], valor: num(l[2]), tipo: l[3], classe: l[4], categoria: l[5], conta: l[6] }; });
+    .slice(0, 200)
+    .map(function (l) { return { data: iso(l[0]), descricao: String(l[1]), valor: num(l[2]), tipo: l[3], classe: l[4], categoria: l[5],
+                                 conta: l[6], pendente: /^pend:/.test(l[8]) }; });
 
   var analise = null;
   var abaIA = ss.getSheetByName('Análise IA');
@@ -1186,6 +1188,7 @@ function dadosDoApp(ss) {
     mes: iso(config['Mês de referência']).slice(0, 7),
     ultimaSync: config['Última sincronização'] instanceof Date ? Utilities.formatDate(config['Última sincronização'], tz, "yyyy-MM-dd'T'HH:mm") : '',
     alerta: num(config['Limite de alerta (% do disponível)']),
+    fechamento: Number(config['Dia de fechamento da fatura Nubank']) || 0,
     resumo: resumo, categorias: categorias, faturas: faturas, contas: contas, investimentos: investimentos,
     mensalidades: mensalidades, parcelados: parcelados, transacoes: transacoes, analise: analise
   };
